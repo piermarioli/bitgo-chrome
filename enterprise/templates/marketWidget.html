@@ -1,0 +1,36 @@
+<div class="col col--fourOfTwelve col--pullRight">
+  <div class="bitcoinPrice">
+    <div class="bitcoinPrice-row">
+      <h2 class="bitcoinPrice-heading">Bitcoin Price</h2>
+      <div class="bitcoinPrice-price"><span>{{currency.symbol}} </span>{{currency.data.current.last}}</div>
+    </div>
+    <div class="bitcoinPrice-row">
+      <div class="bitcoinPrice-priceRecord">High <b>{{currency.data.current.prevDayHigh}}</b></div>
+      <span class="bitcoinPrice-type">24h</span>
+      <div class="bitcoinPrice-positionRight" ng-switch on="direction">
+        <div class = "u-colorGreen" ng-switch-when="up">
+          <i class="icon icon--arrowUp"></i> {{currency.data.symbol}}{{delta}} ({{changePercent}}%)
+        </div>
+        <div class = "u-colorRed" ng-switch-when="down">
+          <i class="icon icon--arrowDown"></i> {{currency.data.symbol}}{{delta}} ({{changePercent}}%)
+        </div>
+        <div class = "u-colorBlue" ng-switch-when="equal">
+          {{currency.data.symbol}}{{delta}} ({{changePercent}}%)
+        </div>
+      </div>
+    </div>
+    <div class="bitcoinPrice-row">
+      <div class="bitcoinPrice-priceRecord">Low <b>{{currency.data.current.prevDayLow}}</b></div>
+      <span class="bitcoinPrice-type">Global Vol</span>
+      <div class="bitcoinPrice-positionRight">{{ currency.data.current.total_vol.toFixed(0) }} BTC</div>
+    </div>
+    <div class = "bitcoinPrice-graph">
+      <nav class="bitcoinPrice-graphNav">
+        <a ng-click = "setTime('week')" class="bitcoinPrice-graphNavItem" ng-class="{ 'is-selected': isCurrentTime('week') }">1 w</a>
+        <a ng-click = "setTime('month')" class="bitcoinPrice-graphNavItem" ng-class="{ 'is-selected': isCurrentTime('month') }">1 m</a>
+        <a ng-click = "setTime('months')" class="bitcoinPrice-graphNavItem" ng-class="{ 'is-selected': isCurrentTime('months') }">3 m</a>
+      </nav>
+      <svg id="chart"></svg>
+    </div>
+  </div>
+</div>

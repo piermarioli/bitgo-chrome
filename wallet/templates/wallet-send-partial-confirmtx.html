@@ -1,0 +1,63 @@
+<div wallet-send-steps-confirm-tx>
+
+  <!-- In section notifications -->
+  <div class="row" ng-show="transactionSent">
+    <div class="col col--sevenOfTwelve">
+
+      <div class="alert alert--success" ng-hide="returnedTransaction.needsApproval">
+        <i class="icon icon--checkmark"></i>
+        <p class="alert-text">Your transaction was sent.</p>
+        <div class="meta">{{ transaction.confirmationTime }}</div>
+        <div class="meta">{{ transaction.transactionId }}</div>
+      </div>
+
+
+      <div class="alert alert--notice" ng-show="returnedTransaction.needsApproval">
+        <p class="alert-text">Your transaction was successfully submitted, but it {{ returnedTransaction.approvalMessage }} and will need approval from an<span ng-show="wallets.current.isRoleAdmin()">other</span> Admin.</p>
+        <div class="meta">{{ transaction.confirmationTime }}</div>
+      </div>
+
+    </div>
+  </div>
+
+  <form name="confirmSendBitcoinForm">
+    <div class="row">
+
+      <p ng-hide="transactionSent" class="u-typography-2">
+        You are about to send:
+      </p>
+
+      <p class="u-typography-4">{{ transaction.total | bgBitcoinFormat:'name':null:null:null:true }}
+        <span class="u-colorGreyDark">({{ transaction.total | bgBitcoinToCurrency }})</span>
+        to {{ transaction.recipientAddress }}
+        <span class="u-colorGreyDark" ng-show="transaction.recipientWallet" >({{ transaction.recipientWallet.data.label }})</span>
+        <span class="u-colorGreyDark" ng-show="!transaction.recipientWallet && transaction.recipientLabel">({{ transaction.recipientLabel }})</span>
+        .
+      </p>
+      <p class="u-typography-4">
+        This transaction includes a blockchain fee of {{ transaction.blockchainFee | bgBitcoinFormat:'name' }}.
+      </p>
+      <p class="u-typography-4" ng-show="transaction.message">
+        Internal memo: <span class="u-typography-5 u-colorGreyDark">{{ transaction.message }}
+      </p>
+
+    </div>
+
+    <div ng-hide="transactionSent">
+      <div class="row">
+        <div class="buttons">
+          <button type="submit" class="button buttonSubmit" ng-class="{ 'disabled' : processing }" name="sendTx" ng-click="sendTx()">Send Funds</button>
+          <button class="button button--create" ng-class="{ 'disabled' : processing }" name="modifyTx" ng-click="setState('prepareTx')">Back</button>
+          <button class="button button--grey" ng-class="{ 'disabled' : processing }" name="cancelSend" ng-click="cancelSend()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div ng-show="transactionSent">
+      <div class="row u-pushDown35">
+        <button class="button button--create" name="sendMoreFunds" ng-click="sendMoreFunds()">Send More Funds</button>
+      </div>
+    </div>
+  </form>
+
+</div>

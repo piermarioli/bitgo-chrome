@@ -1,0 +1,18 @@
+<form class="row">
+  <fieldset class="col col--oneOfTwo col--noPadding">
+    <label>Company Name</label>
+    <div class="inputText--readonly">
+      <input type="text" name="name" data-ng-model="enterprises.current.name" placeholder="Company Name" class="inputText-input" readonly="readonly" disabled>
+    </div>
+    <label>Primary Contact</label>
+    <div class="inputText--readonly">
+      <input type="text" name="name" placeholder="Contact name" class="inputText-input" bg-get-user data-ng-model="user.settings.name.full" user-id="{{ enterprises.current.primaryContact }}" readonly="readonly" disabled>
+    </div>
+    <div class="inputText--readonly">
+      <input type="email" name="email" placeholder="Email Address" class="inputText-input" bg-get-user ng-model="user.settings.email.email" user-id="{{ enterprises.current.primaryContact }}" readonly="readonly" disabled>
+    </div>
+    <div class="inputText--readonly">
+      <bg-intl-tel-input name="phone" type="tel" ng-model="user.settings.phone.phone" disabled></bg-intl-tel-input>
+    </div>
+  </fieldset>
+</form>

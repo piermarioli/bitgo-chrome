@@ -1,0 +1,78 @@
+<div wallet-create-steps-backupkey class="row">
+  <div class="col col--centered">
+
+    <h2>Backup Key</h2>
+    <p class="u-typography-3 u-colorGreyDark u-marginBottom45">The Backup Key protects your wallet if you ever need to access your account without BitGo.</p>
+
+    <h3>Choose how to create a backup key</h3>
+
+    <!-- User backup key selection -->
+    <ul class="selector row">
+      <li class="selector-item" ng-class="{ 'is-selected' : showOption('inBrowser'), 'is-disabled' : optionIsDisabled('inBrowser') }" ng-click="setBackupkeyOption('inBrowser')">
+
+        <h4 class="selector-heading">Create in browser</h4>
+        <p>Create the key now, in your browser, and encrypt it with your password.  BitGo will never see your password or your key.</p>
+
+      </li>
+      <li class="selector-item" ng-class="{ 'is-selected' : showOption('userProvided'), 'is-disabled' : optionIsDisabled('userProvided') }" ng-click="setBackupkeyOption('userProvided')">
+
+        <h4 class="selector-heading">Provide public key</h4>
+        <p>Generate a key offline, and provide only the public portion of your Backup Key.</p>
+        <div class="selector-notice">MORE SECURE</div>
+
+      </li>
+<!--
+      <li class="selector-item" ng-class="{ 'is-selected' : showOption('coldKeyApp'), 'is-disabled' : optionIsDisabled('coldKeyApp') }" ng-click="setBackupkeyOption('coldKeyApp')">
+
+        <h4 class="selector-heading">Use ColdKey app</h4>
+        <p>Generate a key in a safe mobile app from BitGo.  Simple and safe.</p>
+        <div class="selector-notice">MORE SECURE</div>
+
+      </li>
+-->
+    </ul>
+
+    <!-- Create backup key in-Browser -->
+    <div ng-show="showOption('inBrowser')">
+      <form name="createStepsBackupkeyInBrowserForm">
+        <div class="buttons">
+          <button type="submit" class="button" name="advanceBackupkey" ng-click="advanceBackupkey()">Next</button>
+          <a class="button button--grey" name="cancel" ng-click="cancel()">Cancel</a>
+        </div>
+      </form>
+    </div>
+
+    <!-- User provides their own backup xpub -->
+    <div ng-show="showOption('userProvided')">
+      <h3>Enter your key</h3>
+      <p class="u-typography-4 u-colorGreyDark">Generate your Backup Key with any BIP32 key generation software.  You should generate the key on a separate machine from the one you are using now, and you must keep a backup of your private key.</p>
+
+      <form name="createStepsBackupkeyUserProvidedForm">
+
+        <div class="formRow" ng-class="{ 'formRow--error': backupPubKeyError }">
+          <p class="notice" ng-show="backupPubKeyError">Invalid xpub</p>
+          <div class="inputText">
+            <input type="xpub" name="backupPubKey" ng-model="inputs.backupPubKey" placeholder="BIP32 Extended Public Key (xpub)" class="inputText-input inputText-input--smallType" bg-input-validator bg-focus-when="true" >
+            <div class="u-colorGreen inlineNotice" ng-show="userXpubValid()">
+              <i class="icon icon--checkmark"></i> Key valid
+            </div>
+          </div>
+        </div>
+
+        <div class="buttons">
+          <button class="button" ng-class="{ 'disabled' : !userXpubValid() }" name="advanceBackupkey" ng-click="advanceBackupkey()">Next</button>
+          <a class="button button--grey" name="cancel" ng-click="cancel()">Cancel</a>
+        </div>
+
+      </form>
+    </div>
+
+  </div>
+
+  <!-- TODO (Gavin): Get these working once above flows are working
+  <div ng-show="showOption('coldKeyApp')">
+    cold key app provided backup key
+    <ng-include src="'wallet/templates/wallet-create-partial-backupkey-coldkeyapp.html'"></ng-include>
+  </div> -->
+
+</div>

@@ -1,0 +1,15 @@
+<td colspan="2">
+  <div class="activityTable-text">
+    <i class="icon icon--wallet"></i>
+    <b>Bitgo</b> signed a transaction<br>
+    <b>Sent {{ logItem.data.amount | bgBitcoinFormat:'name' }}</b>
+    <b bg-get-address-label address-id="{{ logItem.data.address }}" wallet-id="{{ logItem.walletId }}">
+      to {{ label }}
+    </b><br>
+    <div class="activityTable-timestamp">{{ logItem.prettyDate }}</div>
+  </div>
+</td>
+<td class="activityTable-wallet">
+  <span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>
+</td>
+<td class="activityTable-buttons"></td>

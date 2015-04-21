@@ -1,0 +1,14 @@
+<td colspan="2" bg-get-user user-id="{{ logItem.user }}">
+  <div class="activityTable-text">
+    <i class="icon icon--wallet"></i>
+    <b>Label added</b> to address {{ logItem.target }}<br>
+    New label: <b>{{ logItem.data.label }}</b>
+    <div class="activityTable-timestamp">{{ logItem.prettyDate }}</div>
+  </div>
+</td>
+<td class="activityTable-wallet">
+  <span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>
+</td>
+<td class="activityTable-buttons">
+  <span ng-show="logItem.data.needsApproval">Required approval</span>
+</td>

@@ -1,0 +1,67 @@
+<div bg-state-manager>
+  <!-- Masthead section -->
+  <section class="masthead">
+    <div class="contentWrapper">
+
+      <!-- Header Wallet info -->
+      <div class="row">
+        <div class="col col--eightOfTwelve">
+          <h1 class="masthead-heading masthead-heading--withSubContent">{{ wallets.current.data.label }}</h1>
+          <p class="u-typography-5 u-colorGreyDark u-marginBottom30">{{ currentReceiveAddress.address }}</p>
+        </div>
+        <div class="col col--fourOfTwelve u-alignRight">
+          <div class="u-typography-2 walletBalance">{{ wallets.current.data.balance | bgBitcoinFormat }}
+            <span class="u-typography-light">{{ null | bgBitcoinFormat:'name':null:null:'' }}</span>
+          </div>
+          <div class="u-colorGrey">{{ currency.data.symbol }} {{ wallets.current.data.balance | bgBitcoinToCurrency }} {{ currency.currency }}</div>
+        </div>
+      </div>
+
+      <!-- Sub nav items -->
+      <div class="row">
+        <!-- Left Side Nav Items -->
+        <div class="col col--oneOfTwo col-noPadding">
+          <nav>
+            <ul class="sectionNav leftSectioNav">
+              <li class="sectionNav-item">
+                <a class="sectionNav-link" ng-click="setState('transactions')" ng-class="{ 'is-selected' : isCurrentWalletState('transactions') }">Transactions</a>
+              </li>
+              <li class="sectionNav-item" ng-show="wallets.current.isRoleAdmin() && wallets.current.isSafehdWallet()">
+                <a class="sectionNav-link" ng-click="setState('users'); setSubState()" ng-class="{ 'is-selected' : isCurrentWalletState('users') }">Users</a>
+              </li>
+              <li class="sectionNav-item" ng-show="wallets.current.isRoleAdmin() && wallets.current.isSafehdWallet()">
+                <a class="sectionNav-link" ng-click="setState('policy')" ng-class="{ 'is-selected' : isCurrentWalletState('policy') }">Policy</a>
+              </li>
+              <li class="sectionNav-item">
+                <a class="sectionNav-link" ng-click="setState('settings')" ng-class="{ 'is-selected' : isCurrentWalletState('settings') }">Settings</a>
+              </li>
+            </ul>
+          </nav>
+        </div>
+        <!-- Right Side Nav Items -->
+        <div class="col col--oneOfTwo col-noPadding">
+          <nav>
+            <ul class="sectionNav u-pullRight rightSectioNav">
+              <li class="sectionNav-item"  ng-show="!wallets.current.isRoleViewer()">
+                <a class="sectionNav-link" ng-click="setState('send')" ng-class="{ 'is-selected' : isCurrentWalletState('send') }">
+                  <i class="icon icon--arrowUp"></i>Send
+                </a>
+              </li>
+              <li class="sectionNav-item">
+                <a class="sectionNav-link" ng-click="setState('receive')" ng-class="{ 'is-selected' : isCurrentWalletState('receive') }">
+                  <i class="icon icon--arrowDown"></i>Receive
+                </a>
+              </li>
+            </ul>
+          </nav>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <main class="mainContent contentWrapper">
+    <ng-include src="walletStateTemplateSource"></ng-include>
+  </main>
+
+</div>

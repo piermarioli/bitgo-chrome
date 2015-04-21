@@ -1,0 +1,76 @@
+<div wallet-send-steps-prepare-tx>
+  <form class="row" name="sendBitcoinForm">
+    <fieldset class="col col--sevenOfTwelve">
+
+      <bg-form-error></bg-form-error>
+
+      <div class="formRow" wallet-send-steps-typeahead ng-class="{ 'formRow--error': recipientInvalid }">
+        <label>Send To</label>
+        <p class="notice" ng-show="recipientInvalid">Invalid bitcoin address</p>
+        <div class="inputText u-minWidth470">
+          <input type="text" name="recipientViewValue" class="inputText-input" ng-model="recipientViewValue" typeahead="wallet for wallet in dropdownWallets | filter:$viewValue | limitTo:4" typeahead-on-select="setRecipientFromTypeahead($item)" typeahead-template-url="wallet/templates/wallet-send-partial-typeaheaditem.html" class="form-control" bg-focus-when="true" placeholder="Recipient address or label" />
+          <span ng-show="transaction.recipientWallet" class="inputText-bitcoinAddress">
+            <span class="selected">{{ transaction.recipientWallet.data.id | bgCenterEllipsis: 19 }}</span>
+            <i class="icon icon--close" ng-click="clearRecipient()"></i>
+          </span>
+        </div>
+
+        <div ng-show="showRecipientLabelField()" class="inputText">
+          <input type="text" name="recipientLabel" ng-model="transaction.recipientLabel" bg-input-validator class="inputText-input" placeholder="Label this address">
+        </div>
+
+      </div>
+
+      <label>Amount</label>
+      <div ng-show="violatesSpendingLimit()">
+        <p class="notice" ng-show="wallets.current.multipleAdmins">This transaction exceeds your spending limit and will need approval.</p>
+        <p class="notice" ng-hide="wallets.current.multipleAdmins">This transaction exceeds your spending limit.</p>
+      </div>
+      <div class="formRow formRow--constrainWidth u-pullRight">
+        <div class="currencyBox u-valignMiddle">
+          <span class="u-typography-3 u-colorBlueGreyLight u-valignMiddle span--constrainWidth">{{ currency.data.symbol }} {{ transaction.amount | bgBitcoinToCurrency }}</span>
+          <span class="currencyBox-text u-valignMiddle u-pullRight">
+            {{ currency.currency }}
+            <!-- <i class="icon icon--arrowSmallDown"></i> -->
+          </span>
+          <!-- <select class="customSelect-select customSelect--inline-select">
+             TODO (Gavin): Later, add multicurrency support here -->
+            <!-- <option>BTC</option>
+            <option>USD</option>
+            <option>GBP</option>
+            <option>EUR</option>
+          </select> -->
+        </div>
+      </div>
+
+      <div class="formRow formRow--constrainWidth">
+        <div class="customInputText--overlay">
+          <span class="customSelect-text customSelect--overlay-text">
+            {{ null | bgBitcoinFormat:'name':null:null:'' }}
+            <!-- <i class="icon icon--arrowSmallDown"></i> -->
+          </span>
+          <!-- TODO (Gavin): Later, add multi-bitcoinunit support here -->
+          <!-- <select class="customSelect-select customSelect--overlay-select">
+            <option>BTC</option>
+            <option>USD</option>
+            <option>GBP</option>
+            <option>EUR</option>
+          </select> -->
+        </div>
+
+        <div class="inputText">
+          <input type="text" name="amount" ng-model="transaction.amount" bg-input-validator class="u-alignRight inputText-input" bg-input-to-satoshi-converter max-length="16">
+        </div>
+      </div>
+
+      <div class="formRow">
+        <label>Internal Memo</label>
+        <div class="inputText">
+          <textarea name="message" ng-model="transaction.message" class="inputText-input inputText-textarea" placeholder="Enter a memo (optional)"></textarea>
+        </div>
+      </div>
+
+      <button type="submit" class="button buttonSubmit" name="advanceTransaction" ng-click="advanceTransaction()">Next</button>
+    </fieldset>
+  </form>
+</div>

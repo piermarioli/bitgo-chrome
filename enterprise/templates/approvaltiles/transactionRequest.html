@@ -1,0 +1,60 @@
+<td ng-show="showState('initial')" colspan="2" bg-get-user user-id="{{ approvalItem.creator }}">
+
+  <!-- Show this if currentUser created the approval -->
+  <div ng-show="userIsCreator" class="activityTable-text">
+    <i class="icon icon--wallet"></i>
+    Your request to send funds is awaiting approval<br>
+    <b>{{ approvalItem.info.transactionRequest.requestedAmount | bgBitcoinFormat:'name':null:null:null:true }}</b>
+    to
+
+    <b bg-get-address-label address-id="{{ approvalItem.info.transactionRequest.destinationAddress }}" wallet-id="{{ approvalItem.bitcoinAddress }}">
+      {{ label }}
+    </b>
+
+    <br>
+    ({{ approvalItem.info.transactionRequest.destinationAddress }})
+
+    <br>
+    <div class="activityTable-timestamp">{{ approvalItem.prettyDate }}</div>
+  </div>
+
+  <!-- Show this if someone else created the approval -->
+  <div ng-hide="userIsCreator" class="activityTable-text">
+    <i class="icon icon--wallet"></i>
+    <b>{{ user.settings.email.email }} </b>requested to send funds<br>
+    <b>{{ approvalItem.info.transactionRequest.requestedAmount | bgBitcoinFormat:'name':null:null:null:true }}</b>
+    to
+
+    <b bg-get-address-label address-id="{{ approvalItem.info.transactionRequest.destinationAddress }}" wallet-id="{{ approvalItem.bitcoinAddress }}">
+      {{ label }}
+    </b>
+
+    <br>
+    ({{ approvalItem.info.transactionRequest.destinationAddress }})
+
+    <br>
+    <div class="activityTable-timestamp">{{ approvalItem.prettyDate }}</div>
+  </div>
+
+</td>
+
+<td class="activityTable-wallet">
+  <span bg-get-local-wallet wallet-id="{{ approvalItem.bitcoinAddress }}">{{ label }}</span>
+</td>
+
+<td class="activityTable-buttons">
+  <div class="buttons" ng-show="userIsCreator">
+    <a class="button button--small button--cancel" ng-click="submitApproval('rejected')">Cancel</a>
+  </div>
+
+  <div class="buttons" ng-hide="userIsCreator">
+    <span bg-confirm-action ng-show="showState('initial')">
+      <a class="button button--small button--green" ng-hide="confirmationMessage" ng-click="submitTx()">Approve</a>
+      <a class="button button--small button--reject" ng-hide="confirmationMessage" ng-click="initiateAction()">Reject</a>
+      <span ng-show="confirmationMessage">Are you sure?
+        <a ng-click="submitApproval('rejected')">Yes</a> |
+        <a ng-click="cancelAction()">No</a>
+      </span>
+    </span>
+  </div>
+</td>

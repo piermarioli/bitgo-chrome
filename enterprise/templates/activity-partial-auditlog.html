@@ -1,0 +1,17 @@
+<div activity-audit-log>
+  <table class="activityTable">
+
+    <thead>
+      <tr>
+        <th class="activityTable-events">Event</th>
+        <th></th>
+        <th>Wallet</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr ng-repeat="logItem in auditLog" audit-log-activity-tile tile-item="logItem"></tr>
+    </tbody>
+
+  </table>
+</div>
