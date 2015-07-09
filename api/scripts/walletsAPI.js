@@ -190,7 +190,11 @@ angular.module('BitGo.API.WalletsAPI', [])
     }
 
     // Fetch all wallets for a user
-    function getAllWallets() {
+    function getAllWallets(localWalletsOnly) {
+       // Returns all wallets
+      if (localWalletsOnly) {
+        return allWallets;
+      }
       var resource = $resource(kApiServer + '/wallet?limit=500', {});
       return resource.get({}).$promise
       .then(

@@ -1,23 +1,22 @@
-<td colspan="2" bg-get-user user-id="{{ logItem.user }}">
+<td bg-get-user user-id="{{ logItem.user }}">
   <div class="activityTable-text">
-    <i class="icon icon--wallet"></i>
+
+    <!-- if current user initiated the tx -->
     <span ng-show="user.settings.id === currentUser.settings.id">
-      <b>You </b>
+      You
     </span>
     <span ng-hide="user.settings.id === currentUser.settings.id">
-      <b>{{ user.settings.name.full }} </b>
+      {{ user.settings.email.email }}
     </span>
-    created a transaction<br>
-    <b>Sending {{ logItem.data.amount | bgBitcoinFormat:'name' }}</b>
-    <b bg-get-address-label address-id="{{ logItem.data.address }}" wallet-id="{{ logItem.walletId }}">
-      to {{ label }}
-    </b><br>
+
+    <!-- uniform data -->
+    initiated a transaction to send {{ logItem.data.amount | bgBitcoinFormat:'name' }}
+    to "<span bg-get-address-label address-id="{{ logItem.data.address }}" wallet-id="{{ logItem.walletId }}">{{ label }}</span>" from wallet "<span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>"
+
+    <div ng-show="logItem.data.needsApproval"> <b>This transaction required approval.</b></div>
+    <div ng-hide="logItem.data.needsApproval" class="activityTable-timestamp">Transaction ID: {{ logItem.target }}</div>
+    <div ng-show="logItem.data.pendingApproval" class="activityTable-timestamp">Approval ID: {{ logItem.data.pendingApproval }}</div>
+    <div class="activityTable-timestamp">IP Address: {{ logItem.ip }}</div>
     <div class="activityTable-timestamp">{{ logItem.prettyDate }}</div>
   </div>
-</td>
-<td class="activityTable-wallet">
-  <span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>
-</td>
-<td class="activityTable-buttons">
-  <span ng-show="logItem.data.needsApproval">Required approval</span>
 </td>

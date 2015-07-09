@@ -11,8 +11,8 @@
  */
 angular.module('BitGo.Wallet.WalletPolicyWhitelistManagerDirective', [])
 
-.directive('walletPolicyWhitelistManager', ['$rootScope', 'NotifyService', 'PolicyAPI', 'LabelsAPI', 'WalletsAPI', 'WalletModel', 'BG_DEV',
-  function($rootScope, NotifyService, PolicyAPI, LabelsAPI, WalletsAPI, WalletModel, BG_DEV) {
+.directive('walletPolicyWhitelistManager', ['$rootScope', 'NotifyService', 'PolicyAPI', 'LabelsAPI', 'WalletsAPI', 'WalletModel', 'BG_DEV', 'InternalStateService', 'AnalyticsProxy',
+  function($rootScope, NotifyService, PolicyAPI, LabelsAPI, WalletsAPI, WalletModel, BG_DEV, InternalStateService, AnalyticsProxy) {
     // current section name
     var CURRENT_SECTION = 'whitelist';
 
@@ -148,6 +148,17 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistManagerDirective', [])
           .catch(NotifyService.errorHandler);
         };
 
+        /**
+         * UI - block the feature for the user
+         *
+         * @returns {Bool}
+         */
+        $scope.blockWhitelist = function() {
+          return ($rootScope.currentUser.isBasic() &&
+                  $rootScope.enterprises.current &&
+                  $rootScope.enterprises.current.isPersonal);
+        };
+
         // listen for the tile to be updated, then close it
         var killTileUpdateWatch = $scope.$on('bgListAddressTileLabeler.CurrentTileUpdated',
           function(evt, updatedWhitelistItem) {
@@ -165,12 +176,16 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistManagerDirective', [])
         });
 
         /**
-         * Listen for the section to change to reset state
+         * This listener is fired when the user navigates to the whitelist policy section
          */
         var killStateWatcher = $scope.$on('walletPolicyManager.PolicySectionChanged', function(evt, data) {
           if (data.section === CURRENT_SECTION) {
-            $scope.state = 'list';
-            $scope.initPolicy();
+            init();
+
+            // Track a user navigating to whitelist and landing on the upsell
+            if ($scope.blockWhitelist()) {
+              AnalyticsProxy.track('arriveUpsell', { type: 'whitelist' });
+            }
           }
         });
 
@@ -188,7 +203,19 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistManagerDirective', [])
           $scope.initPolicy();
         }
         init();
-      }]
+      }],
+      link: function(scope, ele, attrs) {
+
+        /**
+        * Take the user to their account settings - plans page
+        *
+        * @public
+        */
+        scope.goToPlans = function() {
+          AnalyticsProxy.track('clickUpsell', { type: 'whitelist' });
+          InternalStateService.goTo('personal_settings:plans');
+        };
+      }
     };
   }
 ]);

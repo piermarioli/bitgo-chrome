@@ -79,6 +79,12 @@ angular.module('BitGo.Wallet.WalletPolicySpendingLimitDirective', [])
          * @private
          */
         function tryInitFromUserPolicy() {
+          // clear any existing errors
+          if ($scope.clearFormError) {
+            $scope.clearFormError();
+          }
+          // clear any errors satoshi errors
+          $scope.satoshiError = false;
           var defaultPolicy = DEFAULT_POLICIES[$scope.policyId];
           // the user may not have a policy, so set/use a default if needed
           if (!$rootScope.wallets.current.hasPolicy()) {

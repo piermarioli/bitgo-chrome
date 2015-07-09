@@ -15,6 +15,8 @@ angular.module('BitGo.Common.BGInputToSatoshiConverterDirective', [])
         // $setViewValue() and $render triggers the parser a second time.
         // Avoid an infinite loop by using the last known returned value
         var RETURNED_VAL;
+        // Used to set cursor position based on change in input
+        var OLD_RETURNED_VAL='';
         // valid types to use in conversions
         var TYPES = {
           BTC: {
@@ -78,6 +80,53 @@ angular.module('BitGo.Common.BGInputToSatoshiConverterDirective', [])
           setError(false);
         }
 
+        // returns the position of the cursor on the input field
+        // http://stackoverflow.com/questions/263743/caret-position-in-textarea-in-characters-from-the-start
+        function getCursorPosition() {
+          //for browsers other than ie
+          if (elem[0].selectionStart) {
+            return elem[0].selectionStart;
+          } else if (!document.selection) {
+            return 0;
+          }
+          // for ie
+          var c = "\001";
+          var sel = document.selection.createRange();
+          var dul = sel.duplicate();
+          var len = 0;
+
+          dul.moveToElementText(node);
+          sel.text = c;
+          len = dul.text.indexOf(c);
+          sel.moveStart('character',-1);
+          sel.text = "";
+          return len;
+        }
+
+        // sets the cursor of the cursor on the input field
+        // http://stackoverflow.com/questions/22574295/set-caret-position-in-input-with-angularjs
+        function setCursorPosition(caretPos) {
+          // for ie
+          if (elem[0].createTextRange) {
+            try {
+              var range = elem.createTextRange();
+              range.move('character', caretPos);
+              range.select();
+            } catch(e) {
+              elem[0].focus();
+            }
+          }
+          // for browsers other than ie
+          else {
+            if (elem[0].selectionStart) {
+              elem[0].focus();
+              elem[0].setSelectionRange(caretPos, caretPos);
+            } else{
+              elem[0].focus();
+            }
+          }
+        }
+
         /**
         * converts the view value to a satoshi value
         * @param value {String} value from the input
@@ -99,21 +148,27 @@ angular.module('BitGo.Common.BGInputToSatoshiConverterDirective', [])
           RETURNED_VAL = RETURNED_VAL.slice(0, attrs.maxLength);
           // set the view value
           $timeout(function() {
+            var cursorPosition = getCursorPosition();
             ngModel.$setViewValue(RETURNED_VAL);
             ngModel.$render();
+            // incase the user actually inputs a valid chracter, set the cursor according to where it was before
+            if (RETURNED_VAL !== OLD_RETURNED_VAL) {
+              setCursorPosition(cursorPosition);
+            }
+            OLD_RETURNED_VAL = RETURNED_VAL;
           }, 0);
 
           checkSatoshiError(RETURNED_VAL, type);
+          // check if just a decimal point is entered. If so, change the value to 0.
+          if(RETURNED_VAL === '.') {
+            RETURNED_VAL = '0.';
+          }
           satoshiValue = Number(RETURNED_VAL) * TYPES[type].modifier;
           return Math.round(satoshiValue);
         }
 
         // Event Handlers
         elem.bind('focus', function () {
-          setError(false);
-        });
-
-        elem.bind('focusout', function() {
           setError(false);
         });
 

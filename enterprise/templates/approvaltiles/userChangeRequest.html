@@ -2,7 +2,6 @@
 
   <!-- Show this if currentUser created the approval -->
   <div ng-show="userIsCreator" class="activityTable-text">
-    <i class="icon icon--wallet"></i>
     <span ng-show="approvalItem.info.userChangeRequest.action === 'removed'">
       Your request to remove a user is awaiting approval<br>
     </span>
@@ -17,7 +16,6 @@
 
   <!-- Show this if someone else created the approval -->
   <div ng-hide="userIsCreator" class="activityTable-text">
-    <i class="icon icon--wallet"></i>
     <span ng-show="approvalItem.info.userChangeRequest.action === 'removed'">
       <b>{{ user.settings.email.email }} </b>requested to remove a user<br>
     </span>

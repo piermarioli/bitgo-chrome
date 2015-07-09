@@ -30,11 +30,11 @@
           </div>
           <a class="u-pullRight" ng-show="showRemoveButton()" ng-click="deletePolicy()">Remove policy</a>
           <a class="u-pullRight" ng-show="showCancelButton()" ng-click="cancelPolicyChanges()">Cancel changes</a>
-        </div>
+        </div>  
       </div>
 
       <div class="col col--oneOfTwo">
-        <button type="submit" name="submitChange" class="button button--inputParallel" ng-show="showSaveButton()" ng-click="submitChange()">Save change</button>
+        <button type="submit" name="submitChange" class="button button--inputParallel" ng-show="showSaveButton() && !satoshiError" ng-click="submitChange()">Save change</button>
       </div>
 
     </form>

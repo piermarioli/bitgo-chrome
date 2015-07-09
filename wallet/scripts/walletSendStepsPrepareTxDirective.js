@@ -4,12 +4,15 @@
  */
 angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', [])
 
-.directive('walletSendStepsPrepareTx', ['$rootScope', 'NotifyService', 'CacheService', 'UtilityService', 'BG_DEV', 'LabelsAPI',
-  function($rootScope, NotifyService, CacheService, UtilityService, BG_DEV, LabelsAPI) {
+.directive('walletSendStepsPrepareTx', ['$q', '$rootScope', 'NotifyService', 'CacheService', 'UtilityService', 'BG_DEV', 'LabelsAPI',
+  function($q, $rootScope, NotifyService, CacheService, UtilityService, BG_DEV, LabelsAPI) {
+
     return {
       restrict: 'A',
       require: '^walletSendManager', // explicitly require it
       controller: ['$scope', function($scope) {
+        $scope.gatheringUnspents = false;
+
         // form error constants
         var ERRORS = {
           invalidRecipient: {
@@ -78,24 +81,11 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', [])
           }
         }
 
-        /**
-        * Return the total satoshi amount for the transaction
-        * @private
-        * @returns {Int} Tx total BTC amount
-        */
-        function txTotalSatoshis() {
-          return parseFloat($scope.transaction.blockchainFee) +
-            parseFloat($scope.transaction.bitgoFee) +
-            parseFloat($scope.transaction.amount);
-        }
-
         // Validate the transaciton input form
         function txIsValid() {
           var balance;
           var currentWallet;
           var currentWalletAddress;
-          var fundsRemaining;
-          var satoshisNeeded;
           var validRecipientAddress;
 
           try {
@@ -105,14 +95,10 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', [])
             currentWalletAddress = currentWallet.data.id;
             // Funds checking
             balance = currentWallet.data.balance;
-            satoshisNeeded = txTotalSatoshis();
-            fundsRemaining = balance - satoshisNeeded;
           } catch(error) {
             // TODO (Gavin): show user an error here? What can they do?
             console.error('There was an issue preparing the transaction: ', error.message);
           }
-          // set/update the transaction's total
-          $scope.transaction.total = satoshisNeeded;
 
           // ensure a valid recipient address
           if (!validRecipientAddress) {
@@ -129,21 +115,7 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', [])
             $scope.setFormError(ERRORS.invalidAmount.msg);
             return false;
           }
-          // ensure sufficient funds
-          if (fundsRemaining + $scope.transaction.blockchainFee < 0) {
-            $scope.setFormError(ERRORS.insufficientFunds.msg);
-            return false;
-          }
-          // If they do have enough, but they're sending the total amount in their account,
-          // automatically decrease the amount being sent by the blockchain 'required' fee,
-          // then inform them that we deducted this amount and provide a reason why.
-          if (fundsRemaining < 0) {
-            // update the transaction amount being sent to the recipient
-            $scope.transaction.amount = $scope.transaction.amount + fundsRemaining;
-            // update the transaction total to account for the overdraft
-            $scope.transaction.total = satoshisNeeded + fundsRemaining;
-            $scope.showFeeAlert = true;
-          }
+
           // ensure amount is greater than the minimum dust value
           if ($scope.transaction.amount <= BG_DEV.TX.MINIMUM_BTC_DUST) {
             $scope.setFormError(ERRORS.amountTooSmall.msg);
@@ -167,20 +139,80 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', [])
             message: $scope.transaction.message,
             suppressEmail: false
           };
-          var fee = $scope.transaction.blockchainFee;
           // Create the scope's pending transaction
-          $scope.createPendingTransaction(sender, recipient, fee);
-          saveLabel();
+          return $scope.createPendingTransaction(sender, recipient)
+          .then(function() {
+            saveLabel();
+          });
         }
 
         // advances the transaction state if the for and inputs are valid
-        $scope.advanceTransaction = function() {
+        $scope.advanceTransaction = function(amountSpendWasReduced) {
+          // amountSpendWasReduced is used to repesent how much lower the total
+          // amount the user can send is if they are trying to send an amount
+          // that is larger than for which they can afford the blockchain fees.
+          // i.e., if they try to spend their full balance, this will be
+          // automatically reduced by amountSpendWasReduced to an amount they
+          // can afford to spend. This variable must be scoped to the
+          // advanceTransaction method so that every time they click the "next"
+          // button it gets reset to undefined, in case they blick back and
+          // next over and over changing the total amount, ensuring that it
+          // gets recomputed each time.
+          $scope.transaction.amountSpendWasReduced = amountSpendWasReduced;
+
+          $scope.gatheringUnspents = true;
+
           $scope.clearFormError();
           if (txIsValid()) {
-            $scope.setState('confirmAndSendTx');
-            return prepareTx();
+            return prepareTx()
+            .then(function() {
+              $scope.gatheringUnspents = false;
+              $scope.setState('confirmAndSendTx');
+            })
+            .catch(function(error) {
+              $scope.gatheringUnspents = false;
+              if (error == 'Error: Insufficient funds') {
+                // An insufficient funds error might happen for a few reasons.
+                // The user might spending way more money than they have, in
+                // which case this is an actual error. Or an insufficient funds
+                // error might occur if they are spending the same or slightly
+                // less than their total balance, and they don't have enough
+                // money to pay the balance. If the former, throw an error, if
+                // the latter, we try to handle it specially, explained below.
+                if (typeof error.fee === 'undefined' || error.fee >= $scope.transaction.amount) {
+                  NotifyService.error('You do not have enough funds in your wallet to pay for the blockchain fees for this transaction.');
+                } else {
+                  // If the user is trying to spend a large amount and they
+                  // don't quite have enough funds to pay the fees, then we
+                  // automatically subtract the fee from the amount they are
+                  // sending and try again. In order to prevent a possible
+                  // infinite loop if this still isn't good enough, we keep
+                  // track of whether we have already tried this, and if we
+                  // have, we throw an error. Furthermore, we create an
+                  // automaticallySubtractinFee variable so that the client can
+                  // optionally display a warning if desired.
+                  if (!amountSpendWasReduced) {
+                    amountSpendWasReduced = $scope.transaction.amount - (error.available - error.fee);
+                    $scope.transaction.amount = error.available - error.fee;
+                    $scope.advanceTransaction(amountSpendWasReduced);
+                  } else {
+                    NotifyService.error('You do not have enough funds in your wallet to pay for the blockchain fees for this transaction.');
+                  }
+                }
+              } else {
+                Raven.captureException(error, { tags: { loc: 'ciaffxsd00000wc52djlzz2tp' } });
+                NotifyService.error('Your transaction was unable to be processed. Please ensure it does not violate any policies, then refresh your page and try sending again.');
+              }
+            });
           }
-          return false;
+
+          // The result of this function is only ever checked in tests.
+          // However, rather than return false, it is good practice to return a
+          // promise, since this function is asynchronous, and thus should
+          // always return a promise.
+          return $q(function(resolve, reject) {
+            return resolve(false);
+          });
         };
 
         function init() {

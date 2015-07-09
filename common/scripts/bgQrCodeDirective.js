@@ -1,13 +1,40 @@
-/**
- * Notes: Creates QR codes based on data in the text attribute
- */
+/*
+ * @ngdoc directive
+ * @name BGQrCode
+ * @description
+ * Creates QR codes based on data in the text attribute
+ * @example
+  <div bg-qr-code></div>
+*/
+
 angular.module('BitGo.Common.BGQrCode', [])
 
-.directive('bgQrCode', [
-  function () {
+.directive('bgQrCode', ['$rootScope', 'BG_DEV', '$modal',
+  function ($rootScope, BG_DEV, $modal) {
     return {
-      restrict: 'E',
+      restrict: 'AE',
       transclude: true,
+      controller: ['$scope', function($scope) {
+        $scope.openModal = function(address, label) {
+          var modalInstance = $modal.open({
+            templateUrl: 'modal/templates/modalcontainer.html',
+            controller: 'ModalController',
+            scope: $scope,
+            resolve: {
+            // The return value is passed to ModalController as 'locals'                                                                                                 
+              locals: function () {
+                return {
+                  userAction: BG_DEV.MODAL_USER_ACTIONS.qrReceiveAddress,
+                  type: BG_DEV.MODAL_TYPES.qrReceiveAddress,
+                  address: address,
+                  label: label
+                };
+              }
+            }
+          });
+        return modalInstance.result;
+        };
+      }],
       compile: function (element, attrs, transclude) {
         return function postLink(scope, iElement, iAttrs, controller) {
           iElement[0].complete = false;

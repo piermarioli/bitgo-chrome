@@ -26,11 +26,26 @@
     </div>
     <div class = "bitcoinPrice-graph">
       <nav class="bitcoinPrice-graphNav">
-        <a ng-click = "setTime('week')" class="bitcoinPrice-graphNavItem" ng-class="{ 'is-selected': isCurrentTime('week') }">1 w</a>
-        <a ng-click = "setTime('month')" class="bitcoinPrice-graphNavItem" ng-class="{ 'is-selected': isCurrentTime('month') }">1 m</a>
-        <a ng-click = "setTime('months')" class="bitcoinPrice-graphNavItem" ng-class="{ 'is-selected': isCurrentTime('months') }">3 m</a>
+        <a ng-click = "setTime('week')" class="bitcoinPrice-graphNavItem" ng-class="{ 'is-selected': isCurrentTime('week') }">1w</a>
+        <a ng-click = "setTime('month')" class="bitcoinPrice-graphNavItem" ng-class="{ 'is-selected': isCurrentTime('month') }">1m</a>
+        <a ng-click = "setTime('months')" class="bitcoinPrice-graphNavItem" ng-class="{ 'is-selected': isCurrentTime('months') }">3m</a>
+        <span ng-show="userHover" class="u-pullRight">
+          {{currency.symbol}}
+          <span id="hoverPrice"></span> | 
+          <span id="hoverDate"></span>
+        </span>
+        <span ng-hide="userHover" class="u-pullRight">
+          {{currency.symbol}}
+          <span>{{currency.data.current.last}}</span> | 
+          <span>{{currentDate}}</span>
+        </span>
       </nav>
-      <svg id="chart"></svg>
+      <svg id="chart" ng-mouseenter="showData()" ng-mouseleave="hideData()"></svg>
+      <!-- The hover blockers are in place to trim the svg element created by d3. 
+      Hover needs to be blocked on both axis as d3 builds in some padding vertically and horizontally -->
+      <div class="d3HorizontalHoverBlocker"></div>
+      <div class="d3VerticalHoverBlocker"></div>
+
     </div>
   </div>
 </div>

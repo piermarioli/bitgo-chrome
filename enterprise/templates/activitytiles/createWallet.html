@@ -1,10 +1,8 @@
-<td colspan="2" bg-get-user user-id="{{ logItem.user }}">
+<td>
   <div class="activityTable-text">
-    <i class="icon icon--wallet"></i>
-    A new wallet was created<br>
-    Name: <b>{{ logItem.data.label }}</b>
+    You created a wallet "{{ logItem.data.label }}"
+    using a backup key generated <span ng-show="logItem.data.backupSource === backupSource.OFFLINE">offline</span><span ng-show="logItem.data.backupSource === backupSource.BROWSER">in the browser</span>
+    <div class="activityTable-timestamp">IP Address: {{ logItem.ip }}</div>
     <div class="activityTable-timestamp">{{ logItem.prettyDate }}</div>
   </div>
 </td>
-<td class="activityTable-wallet">{{ logItem.data.label }}</td>
-<td class="activityTable-buttons"></td>

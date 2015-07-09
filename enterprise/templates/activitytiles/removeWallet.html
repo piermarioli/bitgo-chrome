@@ -1,18 +1,16 @@
-<td colspan="2" bg-get-user user-id="{{ logItem.user }}">
+<td bg-get-user user-id="{{ logItem.user }}">
   <div class="activityTable-text">
-    <i class="icon icon--wallet"></i>
+
+    <!-- If current user removed the wallet -->
     <span ng-show="user.settings.id === currentUser.settings.id">
-      <b>You </b>
+      You deleted wallet "{{ logItem.data.label }}"
     </span>
     <span ng-hide="user.settings.id === currentUser.settings.id">
-      <b>{{ user.settings.name.full }} </b>
+      {{ user.settings.email.email }} deleted wallet "{{ logItem.data.label }}"
     </span>
-    removed access to a wallet<br>
-    <b>{{ logItem.data.label }}</b>
+
+    <!-- uniform data -->
+    <div class="activityTable-timestamp">IP Address: {{ logItem.ip }}</div>
     <div class="activityTable-timestamp">{{ logItem.prettyDate }}</div>
   </div>
-</td>
-<td class="activityTable-wallet">{{ logItem.data.label }}</td>
-<td class="activityTable-buttons">
-  <span ng-show="logItem.data.needsApproval">Required approval</span>
 </td>

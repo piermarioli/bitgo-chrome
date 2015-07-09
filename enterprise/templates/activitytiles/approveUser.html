@@ -1,20 +1,32 @@
-<td colspan="2">
+<td>
   <div class="activityTable-text">
     <div  bg-get-user user-id="{{ logItem.user }}">
-      <i class="icon icon--wallet"></i>
+
+      <!-- if the current user approved another user joining / being removed -->
       <span ng-show="user.settings.id === currentUser.settings.id">
-        <b>You </b>
+        You 
       </span>
       <span ng-hide="user.settings.id === currentUser.settings.id">
-        <b>{{ user.settings.name.full }} </b>
+        {{ user.settings.email.email }} 
+      </span>  
+
+      <!-- if the approval action was for adding a user -->
+      <span ng-show="logItem.data.action=== 'shared'">
+        approved adding <span bg-get-user user-id="{{ logItem.data.user }}"> {{ user.settings.email.email }} </span>
+        to the wallet "<span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>"
+        as {{ logItem.data.permissions | bgPermissionsRoleConversionFilter }}
       </span>
-      approved a new user
+
+      <!-- if the approval action was for removing a user -->
+      <span ng-show="logItem.data.action=== 'removed'">
+        approved removing <span bg-get-user user-id="{{ logItem.data.user }}"> {{ user.settings.email.email }} ({{ logItem.data.permissions | bgPermissionsRoleConversionFilter }}) </span>
+        from the wallet "<span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>"
+      </span>
     </div>
-    <b bg-get-user user-id="{{ logItem.user.data }}"> {{ user.settings.name.full }} </b>to a wallet<br>
+
+    <!-- uniform data -->
+    <div class="activityTable-timestamp">Approval ID: {{ logItem.target }}</div>
+    <div class="activityTable-timestamp">IP Address: {{ logItem.ip }}</div>
     <div class="activityTable-timestamp">{{ logItem.prettyDate }}</div>
   </div>
 </td>
-<td class="activityTable-wallet">
-  <span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>
-</td>
-<td class="activityTable-buttons"></td>

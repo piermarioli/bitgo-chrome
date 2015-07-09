@@ -12,6 +12,7 @@
       <tr bg-dynamic-table-row-manager enterprise-approval-tile ng-repeat="(approvalId, approvalItem) in enterprises.current.pendingApprovals" bg-state-manager id="{{ approvalId }}"></tr>
     </tbody>
   </table>
+
   <div class="meta" ng-show="noApprovalsExist">
     <h2>There is nothing to approve right now.</h2>
     <p class="u-typography-4">Approvals help protect your bitcoin. Configure policies and approvers within each wallet.</p>

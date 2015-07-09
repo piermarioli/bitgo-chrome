@@ -36,7 +36,12 @@ angular.module('BitGo.App.InternalStateService', [])
       },
       'personal_settings:users': {
         path: function() {
-          return '/personal/settings';
+          return '/settings';
+        }
+      },
+      'personal_settings:plans': {
+        path: function() {
+          return '/settings';
         }
       },
     };

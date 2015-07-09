@@ -6,7 +6,9 @@
  */
 angular.module('BitGo.Analytics', [
   // Utilities depends on the AnalyticsProxy
-  'BitGo.Analytics.AnalyticsUtilitiesService',
   'BitGo.Analytics.AnalyticsProxyService',
+  'BitGo.Analytics.AnalyticsUtilitiesService',
+  'BitGo.Analytics.FacebookProvider',
+  'BitGo.Analytics.GoogleAdwordsProvider',
   'BitGo.Analytics.MixpanelProvider'
 ]);

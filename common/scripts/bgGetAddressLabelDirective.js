@@ -12,6 +12,8 @@ angular.module('BitGo.Common.BGGetAddressLabelDirective', [])
       scope: true,
       link: function (scope, element, attrs) {
         attrs.$observe('addressId', function(val) {
+          // Flag to see if the label has been found
+          scope.foundLabel = false;
           // When the addressId changes, walletId might not be loaded. Only fetch when both are present.
           if (!val || !attrs.walletId) {
             return;
@@ -19,7 +21,13 @@ angular.module('BitGo.Common.BGGetAddressLabelDirective', [])
           // Otherwise fetch the label, trying the cache first
           LabelsAPI.get(attrs.addressId, attrs.walletId)
           .then(function (label) {
-            scope.label = label ? label.label : attrs.addressId;
+            if (label) {
+              scope.label = label.label;
+              scope.foundLabel = true;
+            } else {
+              scope.foundLabel = false;
+              scope.label = attrs.addressId;
+            }
           })
           .catch(function (error) {
             console.log("Error getting walletId " + val + ": " + error);

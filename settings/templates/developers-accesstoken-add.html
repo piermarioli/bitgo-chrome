@@ -28,7 +28,7 @@
       </div>
 
       <div class="formRow">
-        <label>Lifetime Spending Limit (BTC)</label>
+        <label>Lifetime Spending Limit ({{ currency.bitcoinUnit }})</label>
         <p class="notice" ng-show="txValueLimitError">Limit Error</p>
         <div class="inputText">
           <input type="text" name="txValueLimit" class="inputText-input" placeholder="Limit" ng-model="tokenParams.txValueLimit" bg-input-validator bg-input-to-satoshi-converter />
@@ -55,7 +55,7 @@
 
       <div class="formRow u-marginBottom30">
         <input type="checkbox" name="terms" ng-model="agreedToTerms">
-        <span ng-click="toggleTerms()">I agree to the <a href="http://bitgoinc.com/bitgo-services-agreement/" target="_blank">terms and conditions</a> and understand the risks associated with creating this token.</span>
+        <span ng-click="toggleTerms()">I agree to the <a href="{{ TemplatePathPrefix }}/services_agreement/" target="_blank">terms and conditions</a> and understand the risks associated with creating this token.</span>
       </div>
 
       <div class="formRow">

@@ -6,8 +6,6 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
 
 .controller('EnterpriseWalletsController', ['$q', '$scope', '$modal', '$rootScope', '$location', '$filter', 'WalletsAPI', 'WalletSharesAPI', 'UtilityService', 'NotifyService', 'KeychainsAPI', 'EnterpriseAPI', 'BG_DEV', 'SyncService', 'RequiredActionService', 'AnalyticsProxy',
   function($q, $scope, $modal, $rootScope, $location, $filter, WalletsAPI, WalletSharesAPI, UtilityService, Notify, KeychainsAPI, EnterpriseAPI, BG_DEV, SyncService, RequiredActionService, AnalyticsProxy) {
-    // id of wallet to be shared
-    var localWalletShare;
     // show the ui if user has access to any wallets
     $scope.noWalletsAcrossEnterprisesExist = null;
     // show the ui if filtered wallets exist
@@ -83,7 +81,8 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
       if ($rootScope.enterprises.current && $rootScope.enterprises.current.isPersonal) {
         return true;
       }
-      if (!$rootScope.currentUser.settings.enterprises) {
+      // If the user is not an enterprise customer, then he cannot create wallets
+      if (!$rootScope.currentUser.isEnterpriseCustomer()) {
         return false;
       }
       return $rootScope.currentUser.settings.enterprises.some(function(enterprise) {
@@ -97,6 +96,55 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
     $scope.goToWallet = function(wallet) {
       WalletsAPI.setCurrentWallet(wallet);
     };
+
+    /**
+    * accept wallet share error handler.
+    * @params - The wallet share you want to accept
+    * @returns {function} which handles the appropriate errors from accepting a share. It calls modals etc
+    */
+    function AcceptShareErrorHandler(walletShare) {
+      return function onAcceptShareFail(error) {
+        if (UtilityService.API.isOtpError(error)) {
+          // If the user needs to OTP, use the modal to unlock their account
+          openModal({ type: BG_DEV.MODAL_TYPES.otpThenUnlock, walletName: walletShare.walletLabel })
+          .then(function(result) {
+            if (result.type === 'otpThenUnlockSuccess') {
+              if (!result.data.otp) {
+                throw new Error('Missing otp');
+              }
+              if (!result.data.password) {
+                throw new Error('Missing login password');
+              }
+              $scope.password = result.data.password;
+              // resubmit to share wallet
+              return $scope.acceptShare(walletShare);
+            }
+          }).catch(function(){
+            $scope.processShare = false;
+          });
+        }
+        else if (UtilityService.API.isPasscodeError(error)) {
+          openModal({ type: BG_DEV.MODAL_TYPES.passwordThenUnlock, walletName: walletShare.walletLabel })
+          .then(function(result) {
+            if (result.type === 'otpThenUnlockSuccess') {
+              if (!result.data.password) {
+                throw new Error('Missing login password');
+              }
+              $scope.password = result.data.password;
+              // resubmit to share wallet
+              return $scope.acceptShare(walletShare);
+            }
+          }).catch(function(){
+            $scope.processShare = false;
+          });
+        }
+        else {
+          $scope.processShare = false;
+          // Otherwise just display the error to the user
+          Notify.error(error.error || error);
+        }
+      };
+    }
 
     /**
     * accepts wallet share.
@@ -113,16 +161,13 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
     */
     $scope.acceptShare = function(walletShare) {
       $scope.processShare = true;
-      if (walletShare) {
-        localWalletShare = walletShare;
-      }
       var params = {
         state: 'accepted',
-        shareId: localWalletShare.id
+        shareId: walletShare.id
       };
-      var role = $filter('bgPermissionsRoleConversionFilter')(localWalletShare.permissions);
+      var role = $filter('bgPermissionsRoleConversionFilter')(walletShare.permissions);
       if (role === BG_DEV.WALLET.ROLES.ADMIN || role === BG_DEV.WALLET.ROLES.SPEND) {
-        WalletSharesAPI.getSharedWallet({shareId: localWalletShare.id})
+        WalletSharesAPI.getSharedWallet({shareId: walletShare.id})
         .then(function(data){
           // check if the wallet is a cold wallet. If so accept share without getting secret etc. (this just behaves as a 'view only' share wallet)
           if (!data.keychain) {
@@ -157,7 +202,7 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
             });
           }
         }).then(shareUserSuccess)
-        .catch(onAcceptShareFail);
+        .catch(AcceptShareErrorHandler(walletShare));
       }
       else {
         return WalletSharesAPI.updateShare(params).then(shareUserSuccess);
@@ -210,51 +255,9 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
       killUserWalletsListener();
     });
 
-    function onAcceptShareFail(error) {
-      if (UtilityService.API.isOtpError(error)) {
-        // If the user needs to OTP, use the modal to unlock their account
-        openModal({ type: BG_DEV.MODAL_TYPES.otpThenUnlock })
-        .then(function(result) {
-          if (result.type === 'otpThenUnlockSuccess') {
-            if (!result.data.otp) {
-              throw new Error('Missing otp');
-            }
-            if (!result.data.password) {
-              throw new Error('Missing login password');
-            }
-            $scope.password = result.data.password;
-            // resubmit to share wallet
-            return $scope.acceptShare();
-          }
-        }).catch(function(){
-          $scope.processShare = false;
-        });
-      }
-      else if (UtilityService.API.isPasscodeError(error)) {
-        openModal({ type: BG_DEV.MODAL_TYPES.passwordThenUnlock })
-        .then(function(result) {
-          if (result.type === 'otpThenUnlockSuccess') {
-            if (!result.data.password) {
-              throw new Error('Missing login password');
-            }
-            $scope.password = result.data.password;
-            // resubmit to share wallet
-            return $scope.acceptShare();
-          }
-        }).catch(function(){
-          $scope.processShare = false;
-        });
-      }
-      else {
-        $scope.processShare = false;
-        // Otherwise just display the error to the user
-        Notify.error(error.error || error);
-      }
-    }
-
     function openModal(params) {
-      if (!params || !params.type) {
-        throw new Error('Missing modal type');
+      if (!params || !params.type || !params.walletName) {
+        throw new Error('Missing modal params');
       }
       var modalInstance = $modal.open({
         templateUrl: 'modal/templates/modalcontainer.html',
@@ -267,6 +270,7 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
             return {
               type: params.type,
               userAction: BG_DEV.MODAL_USER_ACTIONS.acceptShare,
+              walletName: params.walletName
             };
           }
         }

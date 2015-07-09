@@ -1,4 +1,3 @@
-angular.module('BitGo.Enterprise.MonthlyReportsDirective', [])
 /**
  * @ngdoc directive
  * @name monthlyReports
@@ -7,6 +6,7 @@ angular.module('BitGo.Enterprise.MonthlyReportsDirective', [])
  * @example
  *   <div monthly-reports></div>
  */
+ angular.module('BitGo.Enterprise.MonthlyReportsDirective', [])
 
 .directive('monthlyReports', ['$rootScope', 'NotifyService', 'ReportsAPI', 'UtilityService',
   function($rootScope, Notify, ReportsAPI, Utils) {
@@ -25,6 +25,7 @@ angular.module('BitGo.Enterprise.MonthlyReportsDirective', [])
 
         // Filtering function to show only wallets in the view that have a report
         // to show for the current month selected
+        // TODO(gavin): clean this up? can we do better than double loop?
         $scope.showWalletForCurrentPeriod = function(wallet) {
           var hasMonth;
           _.forEach(wallet.data.reportDates, function(reportDate) {
@@ -50,20 +51,18 @@ angular.module('BitGo.Enterprise.MonthlyReportsDirective', [])
             reportInfoObj = wallet.getReportDateInfoForPeriod($scope.selectedDate);
           }
 
-          var reportTitle = new moment(reportInfoObj.startTime);
+          var reportTime = moment.utc(reportInfoObj.startTime);
           var reportStart = reportInfoObj.startTime;
-          var reportEnd = reportInfoObj.endTime;
           var reportParams = {
             walletAddress: wallet.data.id,
-            reportType: 'monthlyTransactionReport',
-            dataType: 'pdf',
-            startTime: reportStart,
-            endTime: reportEnd
+            start: reportStart,
+            period: 'month',
+            format: 'pdf'
           };
 
           ReportsAPI.getReport(reportParams)
           .then(function(data) {
-            if (data.dataType === 'pdf') {
+            if (data.format === 'pdf') {
               // Safari does not support Blob downloads, and opening a Blob URL with
               // an unsupported data-type causes Safari to complain.
               // Github Issue: https://github.com/eligrey/FileSaver.js/issues/12
@@ -72,7 +71,7 @@ angular.module('BitGo.Enterprise.MonthlyReportsDirective', [])
               } else {
                 var buffer = Utils.Converters.base64ToArrayBuffer(data.data);
                 var file = new Blob([buffer], { type: 'application/octet-stream'});
-                var name = 'BitGo-Monthly-Report-ID:' + wallet.data.id.slice(0,6) + '-' + reportTitle.format('YYYY') + '-' + reportTitle.format('MM') + '.pdf';
+                var name = 'BitGo-Monthly-' + wallet.data.id.slice(0,8) + '-' + reportTime.format('YYYY-MM') + '.pdf';
                 saveAs(file, name);
               }
             }
@@ -167,6 +166,10 @@ angular.module('BitGo.Enterprise.MonthlyReportsDirective', [])
 
         function init() {
           $scope.dateVisibleRange = [];
+          // TODO(gavin): clean up
+          if (!_.isEmpty($rootScope.wallets.all)) {
+            getEnterpriseReportRange($rootScope.wallets.all);
+          }
         }
         init();
 

@@ -2,7 +2,9 @@
 <div bg-add-user-to-wallet>
   <form class="row" add-user-form>
     <fieldset class="col col--oneOfTwo">
+
       <bg-form-error></bg-form-error>
+
       <div class="formRow" ng-class="{ 'formRow--error': emailError }">
         <label>Email Address</label>
         <p class="notice" ng-show="emailError">Invalid email address</p>
@@ -10,12 +12,14 @@
           <input type="email" name="email" ng-model="email" class="inputText-input" placeholder="Email Address" bg-input-validator bg-focus-when="true">
         </div>
       </div>
+
       <div class="formRow">
         <label>Invite Message</label>
         <div class="inputText">
           <textarea ng-model="message" class="inputText-input inputText-textarea" placeholder="Hi! Join my wallet on BitGo!"></textarea>
         </div>
       </div>
+
       <div class="formRow formRow--constrainWidth">
         <label>Wallet</label>
         <div class="customSelect customSelect--inlineSmall" bg-focus-ui role="role">
@@ -26,6 +30,7 @@
           </select>
         </div>
       </div>
+
       <div class="formRow">
         <label>Role</label>
         <i class="formRow-icon icon icon--qmark" popover-trigger="mouseenter" popover-placement="right" popover-template="enterprise/templates/rolepopover-partial.html"></i>
@@ -40,6 +45,7 @@
           </select>
         </div>
       </div>
+
       <div class="buttons">
         <button class="button" ng-click="saveAddUserForm()">Share</button>
         <button class="button button--grey" ng-click="setState('showAllUsers')">Cancel</button>

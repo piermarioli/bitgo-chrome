@@ -30,11 +30,8 @@ angular.module('BitGo.Enterprise.ActivityApprovalsDirective', [])
         $scope.goToSettings = function () {
           if ($rootScope.enterprises.current.isPersonal) {
             InternalStateService.goTo('personal_settings:users');
-            //$location.path('/settings');
-          }
-          else {
+          } else {
             InternalStateService.goTo('enterprise_settings:users');
-            //$location.path('/enterprise/' + $rootScope.enterprises.current.id + '/settings');
           }
         };
 
@@ -51,6 +48,12 @@ angular.module('BitGo.Enterprise.ActivityApprovalsDirective', [])
         $scope.$on('$destroy', function() {
           killApprovalsListener();
         });
+
+        // initialize the controller
+        function init() {
+          displayUI();
+        }
+        init();
 
       }]
     };

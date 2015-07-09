@@ -8,12 +8,15 @@
  */
 angular.module('BitGo.Wallet.WalletAddUserFormDirective', [])
 
-.directive('walletAddUserForm', ['$rootScope', '$q', 'UserAPI', 'NotifyService', 'KeychainsAPI', 'UtilityService', '$modal', 'WalletSharesAPI', '$filter', 'BG_DEV',
-  function($rootScope, $q, UserAPI, Notify, KeychainsAPI, UtilityService, $modal, WalletSharesAPI, $filter, BG_DEV) {
+.directive('walletAddUserForm', ['$rootScope', '$q', 'UserAPI', 'NotifyService', 'KeychainsAPI', 'UtilityService', '$modal', 'WalletSharesAPI', '$filter', 'BG_DEV', 'InternalStateService', 'AnalyticsProxy',
+  function($rootScope, $q, UserAPI, Notify, KeychainsAPI, UtilityService, $modal, WalletSharesAPI, $filter, BG_DEV, InternalStateService, AnalyticsProxy) {
     return {
       restrict: 'A',
       controller: ['$scope', function($scope) {
+
+        // will hold form data
         var params;
+
         function formIsValid() {
           if (!$scope.email) {
             $scope.setFormError('Please enter email');
@@ -31,8 +34,10 @@ angular.module('BitGo.Wallet.WalletAddUserFormDirective', [])
           if(!$scope.message){
             $scope.message = "Hi! Join my wallet on BitGo!";
           }
+
           // clear any errors
           $scope.clearFormError();
+
           if (formIsValid()) {
             UserAPI.sharingkey({email: $scope.email}).then(function(data){
               params = {
@@ -61,7 +66,46 @@ angular.module('BitGo.Wallet.WalletAddUserFormDirective', [])
             });
           }
         };
-      }]
+      }],
+      link: function(scope, ele, attrs) {
+
+        /**
+         * UI - block the feature for the user
+         *
+         * @returns {Bool}
+         */
+        scope.blockRole = function() {
+          if (scope.role === BG_DEV.WALLET.ROLES.VIEW) {
+            return (!$rootScope.currentUser.isPro() &&
+                    $rootScope.enterprises.current &&
+                    $rootScope.enterprises.current.isPersonal);
+          }
+          return false;
+        };
+
+        /**
+        * Take the user to their account settings - plans page
+        *
+        * @public
+        */
+        scope.goToPlans = function() {
+          AnalyticsProxy.track('clickUpsell', { type: 'addPremiumUser' });
+          InternalStateService.goTo('personal_settings:plans');
+        };
+
+        // Listen for the selected role to change, and if this role is
+        // blocked, trigger a mixpanel event for showing the upsell
+        var killRoleListener = scope.$watch('role', function(newRole) {
+          if (scope.role === BG_DEV.WALLET.ROLES.VIEW && scope.blockRole()) {
+            AnalyticsProxy.track('triggerUpsell', { type: 'addPremiumUser' });
+          }
+        });
+
+        // Clean up listeners on when scope is gc'd
+        scope.$on('$destroy', function() {
+          killRoleListener();
+        });
+      }
     };
   }
 ]);

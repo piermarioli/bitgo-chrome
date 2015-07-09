@@ -27,11 +27,11 @@ angular.module('BitGo.Common.BGActivityTilePolicyDescriptionDirective', [])
           var addingAddress = !!scope.policyData.condition.add;
           if (addingAddress) {
             scope.addressInQuestion = scope.policyData.condition.add;
-            scope.verb = 'Added';
+            scope.verb = 'Add';
             return;
           }
           scope.addressInQuestion = scope.policyData.condition.remove;
-          scope.verb = 'Removed';
+          scope.verb = 'Remove';
         }
 
         function handleSpendingLimit() {

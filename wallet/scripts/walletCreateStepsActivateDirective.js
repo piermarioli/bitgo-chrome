@@ -329,6 +329,14 @@ angular.module('BitGo.Wallet.WalletCreateStepsActivateDirective', [])
               $scope.generated.wallet = wallet;
               // Get the latest wallets for the app
               WalletsAPI.getAllWallets();
+
+              // If the user isn't upgraded, prompt an insure wallet step
+              if ($rootScope.currentUser.isBasic() || $rootScope.currentUser.isGrandfathered()) {
+                if ($rootScope.enterprises.current && $rootScope.enterprises.current.isPersonal) {
+                  $scope.setState('insure');
+                  return;
+                }
+              }
               // redirect to the wallets dashboard
               $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/wallets');
             })

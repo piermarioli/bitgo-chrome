@@ -44,7 +44,7 @@ angular.module('BitGo.Common.BGListActiveTileManagerDirective', [])
             return;
           }
           // if user is viewer, he cannot change address labels
-          if (!$rootScope.wallets.current.isRoleViewer()){
+          if (!$rootScope.wallets.current.roleIsViewer()){
             // if the user is clicking on the existing open tile, close it
             if (isCurrentTile(tileItem.index)) {
               $scope.closeCurrentTile();

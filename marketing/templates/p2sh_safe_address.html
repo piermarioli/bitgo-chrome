@@ -58,7 +58,7 @@
           </div>
           <div class="whitePaper-text">
             But the disadvantages are obvious.  A web site holding many keys for millions of users is a very obvious target for attackers.  If the web site is hacked, you will lose your bitcoin.  Similarly, if the website is shutdown due to failure to meet regulatory compliance, you will lose your bitcoin as well.
-          </div>  
+          </div>
         </div>
 
         <div class="row u-marginTop30">
@@ -80,7 +80,8 @@
                 You can share a key with multiple, trusted parties who individually cannot access your funds, but can if they work together.
               </li>
             </ol>
-          </div>  
+          </div>
+          <img src="./img/wallet-architecture.jpg" class="u-MarginLeft-75"></img>
         </div>
 
         <div class="row u-marginTop30">
@@ -181,7 +182,7 @@
               The same techniques can be applied to the 2-of-3 address.  Any key used as a signature should be rotated to a new address based on the next sequence in the deterministic key.
             </div>
             <div class="whitePaper-text">
-              As a comprimise solution, the 2-of-3 address offers one more option:  only rotating the server's key.  Since the 2-of-3 key is generated from 3 keys, one of which is managed by the service, we can rotate the user's funds to a new address by only rotating the server’s key.  The resulting address cannot be correlated to the original 2-of-3 address.  However, upon spending of the outputs, the public keys will again be revealed and a correlation could be made at that time.  To maintain the ability for the user to extract funds without the service, the service will need to send the newly minted service public key to the user for safekeeping.  This can be done via email.  But again for maximal privacy, use of deterministic key rotation is recommended.
+              As a compromise solution, the 2-of-3 address offers one more option:  only rotating the server's key.  Since the 2-of-3 key is generated from 3 keys, one of which is managed by the service, we can rotate the user's funds to a new address by only rotating the server’s key.  The resulting address cannot be correlated to the original 2-of-3 address.  However, upon spending of the outputs, the public keys will again be revealed and a correlation could be made at that time.  To maintain the ability for the user to extract funds without the service, the service will need to send the newly minted service public key to the user for safekeeping.  This can be done via email.  But again for maximal privacy, use of deterministic key rotation is recommended.
             </div>
         </div>
 

@@ -75,13 +75,14 @@ angular.module('BitGo.Modals.ModalController', [])
         case BG_DEV.MODAL_TYPES.otpThenUnlock:
           // Starts from the OTP state
           $scope.initialState = 'otp';
-          tpl = 'modal/templates/otp-then-unlock.html';
+          tpl = 'modal/templates/otp-password-unlock.html';
           break;
         // This case handles the case when only password is needed
         case BG_DEV.MODAL_TYPES.passwordThenUnlock:
           // Sets initial state to password. (Starts the flow from there)
-          $scope.initialState = 'password';
-          tpl = 'modal/templates/otp-then-unlock.html';
+          $scope.userUnlocked = true;
+          // Get the time which the user is unlocked from cache if possible
+          tpl = 'modal/templates/otp-password-unlock.html';
           break;
         // This case handles the case when only otp is needed
         case BG_DEV.MODAL_TYPES.otp:
@@ -90,6 +91,14 @@ angular.module('BitGo.Modals.ModalController', [])
         // This case handles when the app is offline
         case BG_DEV.MODAL_TYPES.offlineWarning:
           tpl = 'modal/templates/modal-offline-warning.html';
+          break;
+        // This case handles user deactivation
+        case BG_DEV.MODAL_TYPES.deactivationConfirmation:
+          tpl = 'modal/templates/deactivationConfirmation.html';
+          break;
+        // This case handles the qr modal for viewing receiving addresses
+        case BG_DEV.MODAL_TYPES.qrReceiveAddress:
+          tpl = 'modal/templates/qrReceiveAddress.html';
           break;
         default:
           tpl = 'modal/templates/default.html';
@@ -104,6 +113,10 @@ angular.module('BitGo.Modals.ModalController', [])
       }
       if (!locals.userAction || !_.has(BG_DEV.MODAL_USER_ACTIONS, locals.userAction)) {
         throw new Error('Modal controller expected a valid userAction');
+      }
+      // if it's a modal for accepting share, we need wallet name as well
+      if (locals.userAction === BG_DEV.MODAL_USER_ACTIONS.acceptShare && !locals.walletName) {
+        throw new Error('Modal controller expected wallet name');
       }
       $scope.templateSource = getTemplate();
       currentModalFlow = BG_DEV.MODAL_TYPES[locals.type];

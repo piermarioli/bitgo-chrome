@@ -38,7 +38,7 @@
         <td colspan="1">{{ token.created | date: "MM/d/yy" }}</td>
         <td colspan="1">{{ token.label }}</td>
         <td colspan="1">{{ token.scope.join(', ') }}</td>
-        <td colspan="2">{{ token.unlock.txValue/1e8 || 0 | number:2 }} / {{ token.unlock.txValueLimit/1e8 || 0 }} BTC</td>
+        <td colspan="2">{{ (token.unlock.txValue || 0) | bgBitcoinFormat:null }} / {{ (token.unlock.txValueLimit || 0) | bgBitcoinFormat:'name' }}</td>
         <td colspan="2">
           <a ng-click="startRemovingToken(token.id)" ng-hide="showRemovingConfirm(token.id)">Remove Token</a>
           <span ng-show="showRemovingConfirm(token.id)">Sure?
@@ -46,9 +46,7 @@
             <a ng-click="stopRemovingToken(token.id)">No</a>
           </span>
         </td>
-
       </tr>
     </tbody>
   </table>
-
 </div>

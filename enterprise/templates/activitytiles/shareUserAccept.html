@@ -1,18 +1,18 @@
-<td colspan="2" bg-get-user user-id="{{ logItem.user }}">
+<td bg-get-user user-id="{{ logItem.user }}">
   <div class="activityTable-text">
-    <i class="icon icon--wallet"></i>
+
+    <!-- if current user joined / accepted a share for a wallet -->
     <span ng-show="user.settings.id === currentUser.settings.id">
-      <b>You </b>
+      You
     </span>
     <span ng-hide="user.settings.id === currentUser.settings.id">
-      <b>{{ user.settings.name.full }} </b>
+      {{ user.settings.email.email }}
     </span>
-    accepted a share<br>
-    to a wallet <span bg-get-local-wallet wallet-id="{{ logItem.walletId }}"><b>{{ label }}</b></span>
+
+    <!-- uniform data -->
+    joined wallet "<span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>"
+    as <span>{{logItem.data.permissions | bgPermissionsRoleConversionFilter }}</span>
+    <div class="activityTable-timestamp">IP Address: {{ logItem.ip }}</div>
     <div class="activityTable-timestamp">{{ logItem.prettyDate }}</div>
   </div>
 </td>
-<td class="activityTable-wallet">
-  <span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>
-</td>
-<td class="activityTable-buttons"></td>

@@ -19,7 +19,7 @@
     New limit
       <b>
         <span ng-show="approvalItem.info.policyRuleRequest[approvalItemAction].condition.amount >= 0">{{ approvalItem.info.policyRuleRequest[approvalItemAction].condition.amount | bgBitcoinFormat:null:null:null:'Unlimited':true }}</span>
-        <span ng-hide="approvalItem.info.policyRuleRequest.action === 'remove'">Unlimited</span>
+        <span ng-show="approvalItem.info.policyRuleRequest.action === 'remove'">Unlimited</span>
         {{ null | bgBitcoinFormat:'name':null:null:'' }}
       </b>
     </p>

@@ -10,10 +10,13 @@ angular.module('BitGo.Modals', [
   // Just Otp
   'BitGo.Modals.ModalOtpFormDirective',
   // Otp Then Unlock flow
-  'BitGo.Modals.ModalOtpThenUnlockManagerDirective',
-  'BitGo.Modals.ModalPasswordFormDirective',
+  'BitGo.Modals.ModalOtpPasswordFormDirective',
   // App Offline Warning
-  'BitGo.Modals.ModalOfflineWarningDirective'
+  'BitGo.Modals.ModalOfflineWarningDirective',
+  // User Deactivation Modal
+  'BitGo.Modals.ModalAccountDeactivationDirective',
+  // QR Receive Address
+  'BitGo.Modals.ModalQrReceiveAddressDirective'
 ])
 
 .run(['$rootScope', '$compile', '$http', '$templateCache', 'CONSTANTS', 'ModalStateService',

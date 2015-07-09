@@ -181,6 +181,24 @@ angular.module('BitGo.API.EnterpriseAPI', [])
       });
     }
 
+    /**
+    * Returns basic info for an enterprise - used publicly, not scoped to a user
+    * @param { String } enterpriseName
+    * @private
+    * @returns { Promise }
+    */
+    function getInfoByName(enterprise) {
+      if (!enterprise) {
+        throw new Error('missing enterprise');
+      }
+      var resource = $resource(kApiServer + '/enterprise/name/' + enterprise, {});
+      return new resource.get({}).$promise
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
+      );
+    }
+
     // Event Handling
     $rootScope.$on('UserAPI.CurrentUserSet', function(evt, user) {
       initUserCurrentEnterpriseCache();
@@ -220,6 +238,7 @@ angular.module('BitGo.API.EnterpriseAPI', [])
 
     // In-client API
     return {
+      getInfoByName: getInfoByName,
       getAllEnterprises: getAllEnterprises,
       setCurrentEnterprise: setCurrentEnterprise,
       getCurrentEnterprise: getCurrentEnterprise,

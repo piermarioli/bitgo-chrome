@@ -8,7 +8,7 @@ angular.module('BitGo.Wallet.WalletCreateController', [])
 .controller('WalletCreateController', ['$scope', '$rootScope', '$location', 'AnalyticsProxy',
   function($scope, $rootScope, $location, AnalyticsProxy) {
     // view states for the user settings area
-    $scope.viewStates = ['label', 'backupkey', 'passcode', 'activate'];
+    $scope.viewStates = ['label', 'backupkey', 'passcode', 'activate', 'insure'];
     // the current view state
     $scope.state = null;
     // template source for the current view
@@ -46,6 +46,9 @@ angular.module('BitGo.Wallet.WalletCreateController', [])
           break;
         case 'activate':
           tpl = 'wallet/templates/wallet-create-partial-activate.html';
+          break;
+        case 'insure':
+          tpl = 'wallet/templates/wallet-create-partial-insure.html';
           break;
       }
       return tpl;

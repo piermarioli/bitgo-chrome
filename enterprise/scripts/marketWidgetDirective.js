@@ -9,6 +9,17 @@ angular.module('BitGo.Enterprise.MarketWidgetDirective', [])
       templateUrl: '/enterprise/templates/marketWidget.html',
       scope: {},
       controller: ['$scope', function($scope) {
+        $scope.userHover = false;
+        var today = new Date();
+        $scope.currentDate = today.toUTCString().slice(5,16);
+        $scope.showData = function () {
+          $scope.userHover = true;
+        };
+
+        $scope.hideData = function () {
+          $scope.userHover = false;
+        };
+
         // sets and updates $scope.currency data on the isolate scope
         function setScope(currencyData){
           // check if currency data is received first
@@ -93,8 +104,8 @@ angular.module('BitGo.Enterprise.MarketWidgetDirective', [])
 
         nv.addGraph(function() {
           chart = nv.models.lineChart()
-                  .margin({left: 25, right: 0, top: 10})  //Adjust chart margins to give the x-axis some breathing room.
-                  .useInteractiveGuideline(false)         //We want nice looking tooltips and a guideline!
+                  .margin({left: 25, right: 0, top: 12})  //Adjust chart margins to give the x-axis some breathing room.
+                  .useInteractiveGuideline(true)         //We want nice looking tooltips and a guideline!
                   .transitionDuration(500)  //How fast do you want the lines to transition?
                   .showLegend(false)        //Show the legend, allowing users to turn on/off line series.
                   .showYAxis(true)          //Show the y-axis

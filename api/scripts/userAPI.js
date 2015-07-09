@@ -1,7 +1,7 @@
 angular.module('BitGo.API.UserAPI', ['ngResource'])
 
-.factory('UserAPI', ['$location', '$q', '$resource', '$rootScope', 'UserModel', 'UtilityService', 'CacheService', 'AnalyticsProxy', 'BG_DEV',
-  function($location, $q, $resource, $rootScope, UserModel, UtilityService, CacheService, AnalyticsProxy, BG_DEV) {
+.factory('UserAPI', ['$location', '$q', '$resource', '$rootScope', 'UserModel', 'UtilityService', 'SDK', 'CacheService', 'AnalyticsProxy', 'BG_DEV',
+  function($location, $q, $resource, $rootScope, UserModel, UtilityService, SDK, CacheService, AnalyticsProxy, BG_DEV) {
     var kApiServer = UtilityService.API.apiServer;
     var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
     var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
@@ -91,10 +91,13 @@ angular.module('BitGo.API.UserAPI', ['ngResource'])
     * @private
     */
     function clearCurrentUser() {
-      clearAuthToken();
-      clearEmailVerificationToken();
-      Raven.setUser();
-      setCurrentUser();
+      SDK.delete();
+      if (currentUser.loggedIn) {
+        clearAuthToken();
+        clearEmailVerificationToken();
+        Raven.setUser();
+        setCurrentUser();
+      }
     }
 
     // Initialize the factory
@@ -159,22 +162,28 @@ angular.module('BitGo.API.UserAPI', ['ngResource'])
       },
       // Log the user in
       login: function(params) {
-
         // Wipe an existing user's token if a new user signs
         // in without logging out of the current user's account
+        clearCurrentUser();
         if (currentUser.loggedIn) {
           // logout user so that it clears up wallets and enterprises on scope
           $rootScope.$emit('UserAPI.UserLogoutEvent');
-          clearCurrentUser();
         }
 
         // Flag for the new client - need email to be verified first
         params.isNewClient = true;
 
-        var resource = $resource(kApiServer + '/user/login');
-        return new resource(params).$save({})
+        return $q.when(SDK.get().authenticate({
+          username: params.email,
+          password: params.password,
+          otp: params.otp
+        }))
         .then(
           function(data) {
+            // be sure to save the sdk to cache so that we aren't logged out
+            // upon browser refresh
+            SDK.save();
+
             assertAuth(data);
             assertCurrentUserProperties(data);
             setAuthToken(data.access_token);
@@ -201,10 +210,9 @@ angular.module('BitGo.API.UserAPI', ['ngResource'])
       signup: function(params) {
         // Wipe an existing user's token if a new user signs
         // up without logging out of the current user's account
-        if (currentUser.loggedIn) {
-          clearCurrentUser();
-        }
+        clearCurrentUser();
 
+        // TODO: Add support for signup in the SDK
         var resource = $resource(kApiServer + '/user/signup');
         return new resource(params).$save({})
         .then(
@@ -295,16 +303,17 @@ angular.module('BitGo.API.UserAPI', ['ngResource'])
       },
       logout: function() {
         $rootScope.$emit('UserAPI.UserLogoutEvent');
-        var resource = $resource(kApiServer + '/user/logout', {});
 
         // Regardless of success or fail, we want to clear user data
-        return resource.get({}).$promise
+        return $q.when(SDK.get().logout({}))
         .then(
           function(result) {
             // Track the successful logout
             AnalyticsProxy.track('Logout');
             AnalyticsProxy.shutdown();
 
+            // clearing the SDK cache upon logout to make sure the user doesn't
+            // stay logged in.
             clearCurrentUser();
             return result;
           },
@@ -319,6 +328,8 @@ angular.module('BitGo.API.UserAPI', ['ngResource'])
             AnalyticsProxy.track('Error', metricsData);
             AnalyticsProxy.shutdown();
 
+            // even upon a failed logout, we still want to clear the SDK from
+            // cache to make sure the user doesn't somehow stay logged in.
             clearCurrentUser();
             $location.path('/login');
             return error;
@@ -347,15 +358,11 @@ angular.module('BitGo.API.UserAPI', ['ngResource'])
           PromiseErrorHelper()
         );
       },
-      search: function(email) {
-        // Searches for email-verified users by email
-        var resource = $resource(kApiServer + '/user/search/', { email: email });
+      session: function(params) {
+        var resource = $resource(kApiServer + '/user/session', {});
         return resource.get({}).$promise
         .then(
-          function(data) {
-            assertGeneralBitgoUserProperties(data.results[0]);
-            return data.results[0];
-          },
+          PromiseSuccessHelper(),
           PromiseErrorHelper()
         );
       },
@@ -455,6 +462,56 @@ angular.module('BitGo.API.UserAPI', ['ngResource'])
         }
         var resource = $resource(kApiServer + "/user/sharingkey");
         return new resource(params).$save({})
+        .then(
+          PromiseSuccessHelper(),
+          PromiseErrorHelper()
+       );
+      },
+      deactivate: function(params) {
+        var resource = $resource(kApiServer + "/user/deactivate", {},
+                { post: { method: 'POST' } });
+        var createRequest =  new resource(params);
+        
+        return createRequest.$post({})
+        .then(
+          PromiseSuccessHelper(),
+          PromiseErrorHelper()
+        );
+      },
+      payment: function(paymentParams, subscriptionsParams) {
+        if (!paymentParams.token || !subscriptionsParams.planId) {
+          throw new Error('Invalid parameters for payment');
+        }
+        var resource = $resource(kApiServer + "/user/payments");
+        return new resource(paymentParams).$save({})
+        .then(function(data) {
+          var resource = $resource(kApiServer + "/user/subscriptions");
+          return new resource(subscriptionsParams).$save({});
+        })
+        .then(
+          PromiseSuccessHelper(),
+          PromiseErrorHelper()
+        );
+      },
+      changeSubscription: function(params, subscriptionId) {
+        if (!params.planId || !subscriptionId) {
+          throw new Error('Invalid parameters to change subscription');
+        }
+        var resource = $resource(kApiServer + "/user/subscriptions/" + subscriptionId, {}, {
+          update: { method: 'PUT' }
+        });
+        return new resource(params).$update({})
+        .then(
+          PromiseSuccessHelper(),
+          PromiseErrorHelper()
+        );
+      },
+      deleteSubscription: function(subscriptionId) {
+        if (!subscriptionId) {
+          throw new Error('Invalid parameters to change subscription');
+        }
+        var resource = $resource(kApiServer + '/user/subscriptions/' + subscriptionId, {});
+        return new resource({}).$delete()
         .then(
           PromiseSuccessHelper(),
           PromiseErrorHelper()

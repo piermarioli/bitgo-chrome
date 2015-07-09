@@ -6,19 +6,37 @@
  */
 angular.module('BitGo.Analytics.MixpanelProvider', [])
 
-.factory('MixpanelProvider', ['$rootScope', 'BG_DEV',
-  function($rootScope, BG_DEV) {
+.factory('MixpanelProvider', ['$rootScope', 'BG_DEV', 'UtilityService',
+  function($rootScope, BG_DEV, UtilityService) {
+
+    /**
+    * Log instances in which Mixpanel is blocked
+    * @private
+    */
+    function logMixpanelBlock(error) {
+      // Mixpanel is not supported in the Chrome app due to CSP issues
+      if (UtilityService.Global.isChromeApp) {
+        return;
+      }
+      console.log('Mixpanel was blocked:', error.message);
+      console.log('Please turn off any ad blockers that are running');
+    }
 
     /**
     * Initialize Mixpanel analytics
     * @private
     */
     function init() {
-      if (typeof(mixpanel.init) !== 'function') {
-        throw new Error('Missing Mixpanel');
+      if (!window.mixpanel || (typeof(window.mixpanel.init) !== 'function')) {
+        console.log('Mixpanel is not being loaded');
+        return;
       }
-      mixpanel.init(BG_DEV.ANALYTICS.MIXPANEL.APP_TOKEN);
-      return true;
+      try {
+        mixpanel.init(BG_DEV.ANALYTICS.MIXPANEL.APP_TOKEN);
+        return true;
+      } catch(e) {
+        logMixpanelBlock(e);
+      }
     }
 
     /**
@@ -29,9 +47,13 @@ angular.module('BitGo.Analytics.MixpanelProvider', [])
       // Mixpanel is unclear about how to handle user logouts - best practices are used below
       // https://github.com/mixpanel/mixpanel-android/issues/97
       // http://stackoverflow.com.80bola.com/questions/21137286/what-should-i-do-when-users-log-out/22059786
-      mixpanel.cookie.clear();
-      init("");
-      return true;
+      try {
+        mixpanel.cookie.clear();
+        init("");
+        return true;
+      } catch(e) {
+        logMixpanelBlock(e);
+      }
     }
 
 
@@ -63,12 +85,21 @@ angular.module('BitGo.Analytics.MixpanelProvider', [])
       if (!eventName) {
         throw new Error('invalid params');
       }
-      if (eventData) {
-        mixpanel.track(eventName, eventData);
+
+      // attempt event tracking
+      try {
+        // Track the event with data (if any)
+        if (eventData) {
+          mixpanel.track(eventName, eventData);
+          return true;
+        }
+
+        // Otherwise just track the event
+        mixpanel.track(eventName);
         return true;
+      } catch(e) {
+        logMixpanelBlock(e);
       }
-      mixpanel.track(eventName);
-      return true;
     }
 
 
@@ -84,12 +115,18 @@ angular.module('BitGo.Analytics.MixpanelProvider', [])
       if (!data) {
         throw new Error('invalid params');
       }
-      if (typeof(registerOnce) === 'boolean' && registerOnce) {
-        mixpanel.register_once(data);
+
+      // attempt registration
+      try {
+        if (typeof(registerOnce) === 'boolean' && registerOnce) {
+          mixpanel.register_once(data);
+          return true;
+        }
+        mixpanel.register(data);
         return true;
+      } catch(e) {
+        logMixpanelBlock(e);
       }
-      mixpanel.register(data);
-      return true;
     }
 
 
@@ -109,8 +146,12 @@ angular.module('BitGo.Analytics.MixpanelProvider', [])
       if (!userID) {
         throw new Error('invalid params');
       }
-      mixpanel.alias(userID);
-      return true;
+      try {
+        mixpanel.alias(userID);
+        return true;
+      } catch(e) {
+        logMixpanelBlock(e);
+      }
     }
 
     /**
@@ -122,8 +163,12 @@ angular.module('BitGo.Analytics.MixpanelProvider', [])
       if (!userID) {
         throw new Error('invalid params');
       }
-      mixpanel.identify(userID);
-      return true;
+      try {
+        mixpanel.identify(userID);
+        return true;
+      } catch(e) {
+        logMixpanelBlock(e);
+      }
     }
 
     // Initialize Mixpanel as soon as the app boots

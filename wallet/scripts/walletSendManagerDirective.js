@@ -4,8 +4,8 @@
  */
 angular.module('BitGo.Wallet.WalletSendManagerDirective', [])
 
-.directive('walletSendManager', ['$timeout', '$rootScope', '$location', 'NotifyService', 'CacheService', 'UtilityService', 'TransactionsAPI', 'BG_DEV',
-  function($timeout, $rootScope, $location, NotifyService, CacheService, UtilityService, TransactionsAPI, BG_DEV) {
+.directive('walletSendManager', ['$q', '$timeout', '$rootScope', '$location', 'NotifyService', 'CacheService', 'UtilityService', 'TransactionsAPI', 'SDK', 'BG_DEV',
+  function($q, $timeout, $rootScope, $location, NotifyService, CacheService, UtilityService, TransactionsAPI, SDK, BG_DEV) {
     return {
       restrict: 'A',
       require: '^WalletController',
@@ -43,8 +43,15 @@ angular.module('BitGo.Wallet.WalletSendManagerDirective', [])
           delete $scope.transaction;
           // properties we can expect on the transaction object
           $scope.transaction = {
-            // tx fees
-            blockchainFee: 0.0001 * 1e8,    // value is in Satoshis
+            // Don't set blockchainFee here - wait for building transaction to
+            // calculate the fee based on the number of required inputs and
+            // therefore the size of the transaction. Instead, estimate that
+            // the fee will be, to first order, 0.0001 BTC. This figure can be
+            // used to help calculate if there are enough funds left without
+            // forcing any particular fee (which will depend on which utxouts
+            // are used).
+            blockchainFeeEstimate: 0.0001 * 1e8, // value is in Satoshis
+
             bitgoFee: 0.0,                  // value is in Satoshis
             // amount of the transaction
             amount: null,                   // value is in Satoshis
@@ -71,8 +78,45 @@ angular.module('BitGo.Wallet.WalletSendManagerDirective', [])
         }
 
         // Creates a new pending transaction to be confirmed and send to the BitGo server
-        $scope.createPendingTransaction = function(sender, recipient, fee) {
-          $scope.pendingTransaction = new TransactionsAPI.TransactionBuilder(sender, recipient, fee);
+        $scope.createPendingTransaction = function(sender, recipient) {
+          $scope.pendingTransaction = {
+            sender: sender,
+            recipient: recipient,
+          };
+          var wallet;
+          var walletId;
+          var recipients = {};
+          recipients[recipient.address] = recipient.satoshis;
+
+          // now, get to asynchronously get inputs before getting the fee for
+          // spending those inputs.
+          walletId = $rootScope.wallets.current.data.id;
+          return $q.when(SDK.get().wallets().get({ id: walletId }))
+          .then(function(res) {
+            wallet = res;
+
+            // In order to calculate the fee, we need to gather unspents and
+            // try building a transaction. This is not the transaction that
+            // will actually be signed - another one will be created if they
+            // agree to the fee. For this transaction, which is merely used to
+            // calculate the fee, we do not need to gather a new change
+            // address, and therefore pass in a placeholder address (the user's
+            // wallet id).
+            return wallet.createTransaction({
+              recipients: recipients,
+              changeAddress: wallet.id()
+            });
+          })
+          .then(function(res) {
+            var txhex = res.transactionHex;
+            var unspents = res.unspents;
+            var fee = res.fee;
+            $scope.pendingTransaction.unsignedTxHex = txhex;
+            $scope.transaction.feeRate = res.feeRate;
+            $scope.pendingTransaction.fee = fee;
+            $scope.transaction.total = $scope.transaction.amount + fee;
+            $scope.transaction.blockchainFee = fee;
+          });
         };
 
         function init() {

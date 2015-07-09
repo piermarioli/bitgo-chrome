@@ -10,44 +10,92 @@ angular.module('BitGo.API.ReportsAPI', [])
     var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
 
     // local copy of the report range for all wallets
-    var ranges;
+    var startDates = {};
 
-    // Fetch the report range for a specific wallet based on a time step
-    function getWalletReportRange(params) {
-      var rangeParams = {
-        stepType: params.stepType || 'month'
-      };
-      var resource = $resource(kApiServer + '/reports/' + params.walletAddress + '/range', {});
-      return new resource.get(rangeParams).$promise
-      .then(function(data) {
-        ranges[params.walletAddress] = data.range;
-        return data.range;
+    /**
+     * Gets the first transaction date for a wallet
+     * @param   {object} params { walletAddress: String }
+     * @returns {Promise}   promise for { walletId: String, startDate: Date }
+     */
+    function getWalletStartDate(params) {
+      if (typeof(startDates[params.walletAddress]) !== 'undefined') {
+        return $q.when(startDates[params.walletAddress]);
+      }
+      var resource = $resource(kApiServer + '/reports/' + params.walletAddress + '/startDate', {});
+      return new resource.get().$promise
+      .then(function(result) {
+        // cache it
+        startDates[params.walletAddress] = result.startDate;
+        return result.startDate;
       });
+    }
+
+    /**
+     * Gets a set of ranges based on a start date and time step
+     * @param   {Date} startDate  start date
+     * @param   {String} stepType  day|month
+     * @returns {[Date]}           array of dates for starting reports
+     */
+    function getTimeRange(startDate, stepType) {
+      var VALID_RANGE_STEP_TYPES = ['day', 'month'];
+      console.assert(_.contains(VALID_RANGE_STEP_TYPES, stepType));
+      if (!startDate) {
+        return [];
+      }
+      var result = [];
+      var now = moment.utc();
+      var currentDate = new moment.utc(startDate).startOf(stepType);
+      while (currentDate <= now) {
+        result.push(new Date(currentDate));
+        currentDate.add(1, stepType);
+      }
+      return result;
     }
 
     // Get the report range for each wallet in a list of wallets
     // E.g.: all wallets in a specific enterprise
     // The time interval can be configured by stepType ('day' | 'month')
     function getAllWalletsReportRange(params) {
+      startDates = {};
       if (!params.wallets) {
         throw new Error('Expect list of wallets when getting report range for a wallet group');
       }
       // Reset the local report range object
       ranges = {};
 
+      var formatDateForStepType = function(time, stepType) {
+        console.assert(time instanceof Date);
+        switch (stepType) {
+          case 'month':
+            return moment.utc(time).format('MMMM YYYY'); // August 2014
+          case 'day':
+            return moment.utc(time).format('MMMM Do YYYY'); // August 12th 2014
+          default:
+            throw new Error('unknown step type ' + stepType);
+        }
+      };
+
       // Fetch the report range for each wallet
       var fetches = [];
       _.forIn(params.wallets, function(wallet) {
         var walletData = {
           walletAddress: wallet.data.id,
-          stepType: params.stepType || 'month'
         };
-        fetches.push(getWalletReportRange(walletData));
+        fetches.push(getWalletStartDate(walletData));
       });
       // Return the ranges of report dates
       return $q.all(fetches)
       .then(
         function(data) {
+          ranges = _.mapValues(startDates, function(startDate) {
+            var range = getTimeRange(startDate, params.stepType || 'month');
+            return range.map(function(start) {
+              return {
+                startTime: start,
+                dateVisible: formatDateForStepType(start, params.stepType)
+              };
+            });
+          });
           return ranges;
         },
         PromiseErrorHelper()

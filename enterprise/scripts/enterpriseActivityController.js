@@ -5,8 +5,8 @@
 */
 angular.module('BitGo.Enterprise.EnterpriseActivityController', [])
 
-.controller('EnterpriseActivityController', ['$scope', '$rootScope',
-  function($scope, $rootScope) {
+.controller('EnterpriseActivityController', ['$scope', '$rootScope', 'BG_DEV', 'InternalStateService', 'AnalyticsProxy',
+  function($scope, $rootScope, BG_DEV, InternalStateService, AnalyticsProxy) {
     // The view viewStates within the enterprise activity section
     $scope.viewStates = ['auditlog', 'approvals'];
     // The current view section
@@ -26,6 +26,27 @@ angular.module('BitGo.Enterprise.EnterpriseActivityController', [])
         throw new Error('Missing valid state');
       }
       return state === $scope.state;
+    };
+
+    /**
+     * UI - block the feature for the user
+     *
+     * @returns {Bool}
+     */
+    $scope.blockAuditLog = function() {
+      return (!$rootScope.currentUser.isPro() &&
+              $rootScope.enterprises.current &&
+              $rootScope.enterprises.current.isPersonal);
+    };
+
+    /**
+    * Take the user to their account settings - plans page
+    *
+    * @public
+    */
+    $scope.goToPlans = function() {
+      AnalyticsProxy.track('clickUpsell', { type: 'auditLog' });
+      InternalStateService.goTo('personal_settings:plans');
     };
 
     // gets the view template based on the $scope's viewSection
@@ -52,6 +73,11 @@ angular.module('BitGo.Enterprise.EnterpriseActivityController', [])
         return;
       }
       $scope.activityTemplateSource = getTemplate();
+
+      // Track a user landing on the audit log upsell
+      if ($scope.state === 'auditlog' && $scope.blockAuditLog()) {
+        AnalyticsProxy.track('arriveUpsell', { type: 'auditLog' });
+      }
     });
 
     // Clean up when the scope is destroyed
@@ -62,7 +88,6 @@ angular.module('BitGo.Enterprise.EnterpriseActivityController', [])
 
     function init() {
       $rootScope.setContext('enterpriseActivity');
-
       $scope.state = 'approvals';
       $scope.activityTemplateSource = getTemplate();
     }

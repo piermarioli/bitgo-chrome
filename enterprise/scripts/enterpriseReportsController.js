@@ -4,14 +4,45 @@
 */
 angular.module('BitGo.Enterprise.EnterpriseReportsController', [])
 
-.controller('EnterpriseReportsController', ['$scope', '$rootScope', 'NotifyService',
-  function($scope, $rootScope, Notify) {
+.controller('EnterpriseReportsController', ['$scope', '$rootScope', 'NotifyService', 'InternalStateService', 'BG_DEV', 'AnalyticsProxy',
+  function($scope, $rootScope, Notify, InternalStateService, BG_DEV, AnalyticsProxy) {
     // The view viewStates within the enterprise reports section
-    $scope.viewStates = ['monthly'];
+    $scope.viewStates = ['monthly', 'daily', 'csv', 'upsell'];
     // The current view section
     $scope.state = undefined;
     // sets the template to use based on the section
     $scope.activityTemplateSource = null;
+
+    /**
+     * UI - block the feature for the user
+     *
+     * @returns {Bool}
+     */
+    $scope.blockReports = function() {
+      return ($rootScope.currentUser.isBasic() &&
+              $rootScope.enterprises.current &&
+              $rootScope.enterprises.current.isPersonal);
+    };
+
+    /**
+    * Take the user to their account settings - plans page
+    *
+    * @public
+    */
+    $scope.goToPlans = function() {
+      AnalyticsProxy.track('clickUpsell', { type: 'reports' });
+      InternalStateService.goTo('personal_settings:plans');
+    };
+
+    // Return list of wallets sorted by name
+    $scope.getWallets = function() {
+      return _.chain($scope.wallets.all)
+      .values()
+      .sortBy(function(w) {
+        return w.data.label;
+      })
+      .value();
+    };
 
     // gets the view template based on the $scope's viewSection
     function getTemplate() {
@@ -20,8 +51,14 @@ angular.module('BitGo.Enterprise.EnterpriseReportsController', [])
       }
       var template;
       switch ($scope.state) {
+        case 'upsell':
+          template = 'enterprise/templates/reports-partial-upsell.html';
+          break;
         case 'monthly':
           template = 'enterprise/templates/reports-partial-monthly.html';
+          break;
+        case 'csv':
+          template = 'enterprise/templates/reports-partial-csv.html';
           break;
       }
       return template;
@@ -34,6 +71,11 @@ angular.module('BitGo.Enterprise.EnterpriseReportsController', [])
         return;
       }
       $scope.activityTemplateSource = getTemplate();
+
+      // Track a user landing on the reports upsell
+      if ($scope.state === 'upsell' && $scope.blockReports()) {
+        AnalyticsProxy.track('arriveUpsell', { type: 'reports' });
+      }
     });
 
     // Clean up when the scope is destroyed
@@ -44,8 +86,11 @@ angular.module('BitGo.Enterprise.EnterpriseReportsController', [])
 
     function init() {
       $rootScope.setContext('enterpriseReports');
-
-      $scope.state = 'monthly';
+      if ($scope.blockReports()) {
+        $scope.state = 'upsell';
+      } else {
+        $scope.state = 'monthly';
+      }
       $scope.activityTemplateSource = getTemplate();
     }
     init();

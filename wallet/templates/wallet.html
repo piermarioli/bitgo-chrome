@@ -7,7 +7,9 @@
       <div class="row">
         <div class="col col--eightOfTwelve">
           <h1 class="masthead-heading masthead-heading--withSubContent">{{ wallets.current.data.label }}</h1>
-          <p class="u-typography-5 u-colorGreyDark u-marginBottom30">{{ currentReceiveAddress.address }}</p>
+          <p class="u-typography-5 u-colorGreyDark u-marginBottom30">
+            <a bg-qr-code class="icon icon--qrcode" ng-show="isCurrentWalletState('receive')" ng-click="openModal(currentReceiveAddress.address, currentReceiveAddress.label)"></a>
+            {{ currentReceiveAddress.address }}</p>
         </div>
         <div class="col col--fourOfTwelve u-alignRight">
           <div class="u-typography-2 walletBalance">{{ wallets.current.data.balance | bgBitcoinFormat }}
@@ -22,14 +24,14 @@
         <!-- Left Side Nav Items -->
         <div class="col col--oneOfTwo col-noPadding">
           <nav>
-            <ul class="sectionNav leftSectioNav">
+            <ul class="sectionNav leftSectionNav">
               <li class="sectionNav-item">
                 <a class="sectionNav-link" ng-click="setState('transactions')" ng-class="{ 'is-selected' : isCurrentWalletState('transactions') }">Transactions</a>
               </li>
-              <li class="sectionNav-item" ng-show="wallets.current.isRoleAdmin() && wallets.current.isSafehdWallet()">
+              <li class="sectionNav-item" ng-show="wallets.current.roleIsAdmin() && wallets.current.isSafehdWallet()">
                 <a class="sectionNav-link" ng-click="setState('users'); setSubState()" ng-class="{ 'is-selected' : isCurrentWalletState('users') }">Users</a>
               </li>
-              <li class="sectionNav-item" ng-show="wallets.current.isRoleAdmin() && wallets.current.isSafehdWallet()">
+              <li class="sectionNav-item" ng-show="wallets.current.roleIsAdmin() && wallets.current.isSafehdWallet()">
                 <a class="sectionNav-link" ng-click="setState('policy')" ng-class="{ 'is-selected' : isCurrentWalletState('policy') }">Policy</a>
               </li>
               <li class="sectionNav-item">
@@ -42,7 +44,7 @@
         <div class="col col--oneOfTwo col-noPadding">
           <nav>
             <ul class="sectionNav u-pullRight rightSectioNav">
-              <li class="sectionNav-item"  ng-show="!wallets.current.isRoleViewer()">
+              <li class="sectionNav-item"  ng-show="!wallets.current.roleIsViewer()">
                 <a class="sectionNav-link" ng-click="setState('send')" ng-class="{ 'is-selected' : isCurrentWalletState('send') }">
                   <i class="icon icon--arrowUp"></i>Send
                 </a>
@@ -56,7 +58,6 @@
           </nav>
         </div>
       </div>
-
     </div>
   </section>
 

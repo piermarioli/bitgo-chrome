@@ -70,7 +70,7 @@
         </div>
       </div>
 
-      <button type="submit" class="button buttonSubmit" name="advanceTransaction" ng-click="advanceTransaction()">Next</button>
+      <button type="submit" class="button buttonSubmit" name="advanceTransaction" ng-click="advanceTransaction()" ng-disabled="gatheringUnspents">{{ gatheringUnspents ? "Creating Transaction..." : "Next"}}</button>
     </fieldset>
   </form>
 </div>

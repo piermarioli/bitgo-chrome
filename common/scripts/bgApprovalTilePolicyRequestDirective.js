@@ -103,7 +103,7 @@ angular.module('BitGo.Common.BGApprovalTilePolicyRequestDirective', [])
             id: scope.approvalItem.id,
             wallet: scope.approvalItem.bitcoinAddress
           };
-          ApprovalsAPI.update(scope.approvalItem.bitcoinAddress, data)
+          ApprovalsAPI.update(data.id, data)
           .then(function(result) {
             $('#' + scope.approvalItem.id).animate({
               height: 0,

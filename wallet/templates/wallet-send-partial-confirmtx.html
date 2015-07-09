@@ -13,7 +13,7 @@
 
 
       <div class="alert alert--notice" ng-show="returnedTransaction.needsApproval">
-        <p class="alert-text">Your transaction was successfully submitted, but it {{ returnedTransaction.approvalMessage }} and will need approval from an<span ng-show="wallets.current.isRoleAdmin()">other</span> Admin.</p>
+        <p class="alert-text">Your transaction was successfully submitted, but it {{ returnedTransaction.approvalMessage }} and will need approval from an<span ng-show="wallets.current.roleIsAdmin()">other</span> Admin.</p>
         <div class="meta">{{ transaction.confirmationTime }}</div>
       </div>
 
@@ -23,20 +23,29 @@
   <form name="confirmSendBitcoinForm">
     <div class="row">
 
+      <p class="alert alert--notice" ng-hide="!transaction.amountSpendWasReduced">Note: Your wallet does not have enough funds to pay the blockchain transaction fees for the requested amount. The spend amount has been reduced by {{ transaction.amountSpendWasReduced | bgBitcoinFormat:'name'}} in order to pay fees.
+      </p>
+
       <p ng-hide="transactionSent" class="u-typography-2">
         You are about to send:
       </p>
 
-      <p class="u-typography-4">{{ transaction.total | bgBitcoinFormat:'name':null:null:null:true }}
-        <span class="u-colorGreyDark">({{ transaction.total | bgBitcoinToCurrency }})</span>
+      <p class="u-typography-4">{{ transaction.amount | bgBitcoinFormat:'name':null:null:null:true }}
         to {{ transaction.recipientAddress }}
         <span class="u-colorGreyDark" ng-show="transaction.recipientWallet" >({{ transaction.recipientWallet.data.label }})</span>
         <span class="u-colorGreyDark" ng-show="!transaction.recipientWallet && transaction.recipientLabel">({{ transaction.recipientLabel }})</span>
-        .
       </p>
+
       <p class="u-typography-4">
-        This transaction includes a blockchain fee of {{ transaction.blockchainFee | bgBitcoinFormat:'name' }}.
+        {{ transaction.blockchainFee | bgBitcoinFormat:'name':null:null:null:true }}
+        as a transaction fee to miners. <span class="u-colorRed" ng-show="transaction.feeRate > 15000">Increased fee due to network congestion.</span>
       </p>
+  
+     <p class="u-typography-4 txConfirm-total">
+       <b>{{ transaction.total | bgBitcoinFormat:'name':null:null:null:true }}</b>
+       <span>({{ transaction.total | bgBitcoinToCurrency }})</span>
+       in total
+     </p>
       <p class="u-typography-4" ng-show="transaction.message">
         Internal memo: <span class="u-typography-5 u-colorGreyDark">{{ transaction.message }}
       </p>

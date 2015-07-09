@@ -5,7 +5,7 @@
   <span ng-hide="selectedWallet" class="customSelect-text">
       All Wallets <i class="icon icon--arrowSmallDown"></i>
   </span>
-  <select ng-model="selectedWallet" ng-options="wallet.data.label for (walletId, wallet) in wallets.all" class="customSelect-select">
+  <select ng-model="selectedWallet" ng-options="wallet.data.label for wallet in getWallets()" class="customSelect-select">
     <option value="">All Wallets</option>
   </select>
 </div>
@@ -15,20 +15,18 @@
 <div class="u-pushDown25">
   <div ng-hide="selectedWallet">
     <ul class="reportsList">
-      <div ng-repeat="wallet in wallets.all">
+      <div ng-repeat="wallet in getWallets()">
         <li>
           <div ng-show="showWalletForCurrentPeriod(wallet)">
             <a ng-click="getReport(wallet)">
               <i class="icon icon--pdf"></i> {{ wallet.data.label }} Statement - {{ selectedDate }}
             </a>
           </div>
-        </li>
+        </ul>
       </div>
       <div ng-hide="hasReportsForCurrentPeriod">
-        <li>
-          <div class="meta-display">No reports yet</div>
-        </li>
-      </div>  
+        <div class="meta-display">No reports yet</div>
+       </div>
     </ul>
   </div>
   <div ng-show="selectedWallet">
@@ -45,7 +43,7 @@
         <div ng-show="year.year | bgIsObjectEmpty">
           <div class = "meta-display">No reports yet</div>
         </div>
-      </ul>
+      </div>
     </div>
   </div>
 </div>

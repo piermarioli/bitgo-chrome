@@ -21,5 +21,6 @@ angular.module('BitGo.Enterprise', [
   'BitGo.Enterprise.SettingsAddUserFormDirective',
   // Reports Section
   'BitGo.Enterprise.EnterpriseReportsController',
-  'BitGo.Enterprise.MonthlyReportsDirective'
+  'BitGo.Enterprise.MonthlyReportsDirective',
+  'BitGo.Enterprise.CSVReportsDirective'
 ]);

@@ -6,8 +6,8 @@
  */
 angular.module('BitGo.Analytics.AnalyticsProxyService', [])
 
-.factory('AnalyticsProxy', ['$rootScope', '$location', 'BG_DEV', 'MixpanelProvider',
-  function($rootScope, $location, BG_DEV, MixpanelProvider) {
+.factory('AnalyticsProxy', ['$rootScope', '$location', 'BG_DEV', 'MixpanelProvider', 'FacebookProvider', 'GoogleAdwordsProvider',
+  function($rootScope, $location, BG_DEV, MixpanelProvider, FacebookProvider, GoogleAdwordsProvider) {
 
     // Analytics Tool Initialization / Shutdown
 
@@ -36,7 +36,9 @@ angular.module('BitGo.Analytics.AnalyticsProxyService', [])
       try {
         MixpanelProvider.shutdown();
       } catch(e) {
-        throw new Error('Invalid analytics shutdown: ', e);
+        // Don't throw an error on logout
+        console.error('Invalid analytics shutdown: ', e);
+        return false;
       }
       return true;
     }
@@ -107,6 +109,7 @@ angular.module('BitGo.Analytics.AnalyticsProxyService', [])
 
     /**
     * The recommended usage pattern is to call this when the user signs up
+    * Currently tracks using: Mixpanel, Facebook, Google Adwords
     * @param userID {String}
     * @private
     */
@@ -116,6 +119,8 @@ angular.module('BitGo.Analytics.AnalyticsProxyService', [])
       }
       try {
         MixpanelProvider.alias(userID);
+        FacebookProvider.identify();
+        GoogleAdwordsProvider.identify();
       } catch (e) {
         throw new Error('Invalid user registration: ', e);
       }
@@ -123,7 +128,7 @@ angular.module('BitGo.Analytics.AnalyticsProxyService', [])
     }
 
     /**
-    * The recommended usage pattern is to call this when the user signs up
+    * The recommended usage pattern is to call this when the user logs in
     * @param userID {String}
     * @private
     */
@@ -134,7 +139,7 @@ angular.module('BitGo.Analytics.AnalyticsProxyService', [])
       try {
         MixpanelProvider.identify(userID);
       } catch (e) {
-        throw new Error('Invalid user login: ', e);
+        throw new Error('Invalid user login track event: ', e);
       }
       return true;
     }

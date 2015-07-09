@@ -25,8 +25,8 @@ angular.module('BitGo.Settings.PhoneFormDirective', [])
           return true;
         }
 
-        $scope.hasChanges = function() {
-          if (!$scope.settings) {
+        $scope.hasPhoneChanges = function() {
+          if (!$scope.settings || !$scope.localSettings) {
             return false;
           }
           if (!(_.isEqual($scope.localSettings.phone, $scope.settings.phone))) {
@@ -90,7 +90,7 @@ angular.module('BitGo.Settings.PhoneFormDirective', [])
           * @returns {Bool}
           */
         $scope.needsVerification = function() {
-          if (!$scope.settings) {
+          if (!$scope.settings || !$scope.localSettings) {
             return;
           }
           return !$scope.settings.phone.verified ||

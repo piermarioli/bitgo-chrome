@@ -8,7 +8,7 @@
   <form class="row">
 
     <div class="row">
-      <div class="col col--oneOfTwo" ng-show="wallets.current.isRoleAdmin()">
+      <div class="col col--oneOfTwo" ng-show="wallets.current.roleIsAdmin()">
         <label>Wallet name</label>
         <div class="inputText">
           <input type="text" data-ng-model="walletName" placeholder="Full Name" class="inputText-input" bg-focus-when="true" bg-input-validator>

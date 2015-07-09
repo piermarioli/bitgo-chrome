@@ -445,6 +445,10 @@ window.nv.tooltip.* also has various helper methods.
         //By default, the tooltip model renders a beautiful table inside a DIV.
         //You can override this function if a custom tooltip is desired.
         var contentGenerator = function(d) {
+          var time = parseFloat(d.value.replace(/,/g, ''));
+          var date = new Date(time);
+          $('#hoverPrice').text(d.series[0].value);
+          $('#hoverDate').text(date.toUTCString().slice(5,16));
             if (content != null) return content;
 
             if (d == null) return '';
@@ -560,8 +564,10 @@ window.nv.tooltip.* also has various helper methods.
 
             var left = position.left;
             var top = (fixedTop != null) ? fixedTop : position.top;
-            var container = getTooltipContainer(contentGenerator(data));
-            tooltipElem = container;
+            var container = contentGenerator(data);
+            // These lines of code cause the CSP issues. Do not build the rectangular tool top
+            //var container = getTooltipContainer(contentGenerator(data));
+            //tooltipElem = container;
             if (chartContainer) {
                 var svgComp = chartContainer.getElementsByTagName("svg")[0];
                 var boundRect = (svgComp) ? svgComp.getBoundingClientRect() : chartContainer.getBoundingClientRect();
@@ -592,7 +598,7 @@ window.nv.tooltip.* also has various helper methods.
                 top = Math.floor(top/snapDistance) * snapDistance;
             }
 
-            nv.tooltip.calcTooltipPosition([left,top], gravity, distance, container);
+            //nv.tooltip.calcTooltipPosition([left,top], gravity, distance, container);
             return nvtooltip;
         };
 

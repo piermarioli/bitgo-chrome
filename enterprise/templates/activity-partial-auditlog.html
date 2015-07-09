@@ -1,17 +1,23 @@
-<div activity-audit-log>
-  <table class="activityTable">
+<div>
 
-    <thead>
-      <tr>
-        <th class="activityTable-events">Event</th>
-        <th></th>
-        <th>Wallet</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr ng-repeat="logItem in auditLog" audit-log-activity-tile tile-item="logItem"></tr>
-    </tbody>
+  <div class="meta" ng-show="blockAuditLog()">
+    <h2>Audit Logs are a premium feature.</h2>
+    <p class="u-typography-4">To access a detailed security log of all wallet activity, <a ng-click="goToPlans()">upgrade</a> to a Pro account.</p>
+  </div>
 
-  </table>
+  <div ng-hide="blockAuditLog()" activity-audit-log>
+    <table class="activityTable">
+
+      <thead>
+        <tr>
+          <th class="activityTable-events">Log Event</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr ng-repeat="logItem in auditLog" audit-log-activity-tile tile-item="logItem"></tr>
+      </tbody>
+
+    </table>
+  </div>
+
 </div>

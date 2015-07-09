@@ -1,10 +1,19 @@
+/**
+ * @ngdoc directive
+ * @name settingsAboutFormDirective
+ * @description
+ * Directive to manage the user settings. (delete and rename)
+ * @example
+ *   <div settings-about-form></div>
+ */
+/**/
 angular.module('BitGo.Settings.AboutFormDirective', [])
 
 /**
  * Directive to manage the settings about form
  */
-.directive('settingsAboutForm', ['$rootScope', 'UserAPI', 'UtilityService', 'NotifyService',
-  function($rootScope, UserAPI, Util, Notify) {
+    .directive('settingsAboutForm', ['$q', '$rootScope', '$location', '$modal', 'UserAPI', 'UtilityService', 'NotifyService', 'BG_DEV', 'WalletsAPI', 'AnalyticsProxy',
+    function($q, $rootScope, $location, $modal, UserAPI, Util, Notify, BG_DEV, WalletsAPI, AnalyticsProxy) {
     return {
       restrict: 'A',
       require: '^SettingsController',
@@ -37,6 +46,14 @@ angular.module('BitGo.Settings.AboutFormDirective', [])
           } else {
             Notify.error(error.error);
           }
+        }
+
+        function onLogoutSuccess() {
+          $location.path('/login');
+        }
+
+        function logoutUser() {
+          return UserAPI.logout();
         }
 
         $scope.hasChanges = function() {
@@ -76,6 +93,66 @@ angular.module('BitGo.Settings.AboutFormDirective', [])
           }
         };
 
+        /**
+         * Modal - Open a modal for user deactivation
+         * @private
+         */
+        function openModal(params) {
+          var modalInstance = $modal.open({
+            templateUrl: 'modal/templates/modalcontainer.html',
+            controller: 'ModalController',
+            scope: $scope,
+            //            size: size,
+            resolve: {
+              // The return value is passed to ModalController as 'locals'
+              locals: function () {
+                return {
+                  userAction: BG_DEV.MODAL_USER_ACTIONS.deactivationConfirmation,
+                  type: params.type
+                };
+              }
+            }
+          });
+          return modalInstance.result;
+        }
+
+        /**
+        * Called when the user confirms deactivation
+        *
+        * @private
+        */
+        $scope.confirmDeactivate = function () {
+          var userCacheEmpty = _.isEmpty(WalletsAPI.getAllWallets(true));
+          if (!userCacheEmpty) {
+            Notify.error('Please remove all wallets before deactivating account.');
+            return false;
+          } else {
+            openModal({type: BG_DEV.MODAL_TYPES.deactivationConfirmation});
+          }
+        };
+
+        /**
+        * UI - Take the user to their account settings:plans page
+        *
+        * @public
+        */
+        $scope.goToPlans = function() {
+          AnalyticsProxy.track('clickUpsell', { type: 'aboutMe' });
+          $scope.setState('plans');
+        };
+
+        /**
+        * UI - Log event for user learning about billing
+        *
+        * @public
+        */
+        $scope.logViewInfo = function() {
+          var evtData = {
+            type: 'billing',
+            subSection: 'aboutMe'
+          };
+          AnalyticsProxy.track('viewInfo', evtData);
+        };
       }]
     };
   }

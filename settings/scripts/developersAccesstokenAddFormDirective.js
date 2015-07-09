@@ -68,12 +68,23 @@ angular.module('BitGo.Settings.DevelopersAccesstokenAddFormDirective', [])
             $scope.setFormError('New tokens must have restricted IP addresses specified.');
             return false;
           }
-          if (!$scope.tokenParams.txValueLimit.toString()) {
-            $scope.setFormError('New tokens must have a specified limit.');
+          if (!$scope.tokenParams.txValueLimit || !$scope.tokenParams.txValueLimit.toString()) {
+            $scope.setFormError('New tokens must have a specified spending limit.');
+            return false;
+          }
+          if ($scope.tokenParams.txValueLimit > BG_DEV.TX.MAXIMUM_BTC_SPENDING_LIMIT) {
+            $scope.setFormError('Spending limit is too large to use.');
             return false;
           }
           if (!$scope.tokenParams.duration) {
             $scope.setFormError('New tokens must have a specified duration.');
+            return false;
+          }
+          var permissions = _.filter($scope.accessToken.oAuthScopes, function(permission) {
+            return permission.selected === true;
+          });
+          if (permissions.length < 1) {
+            $scope.setFormError('Please set at least one permission for the new token');
             return false;
           }
           return true;
@@ -175,6 +186,9 @@ angular.module('BitGo.Settings.DevelopersAccesstokenAddFormDirective', [])
               $scope.setState('list');
             })
             .catch(handleAddTokenError);
+          }
+          else {
+            NotifyService.error('Form is invalid. Please correct errors and submit again.');
           }
         };
 

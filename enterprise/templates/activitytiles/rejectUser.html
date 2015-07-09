@@ -1,20 +1,39 @@
-<td colspan="2">
+<td>
   <div class="activityTable-text">
+
     <div bg-get-user user-id="{{ logItem.user }}">
-      <i class="icon icon--wallet"></i>
+
+      <!-- if current user rejected the person joining -->
       <span ng-show="user.settings.id === currentUser.settings.id">
-        <b>You </b>
+        You
       </span>
       <span ng-hide="user.settings.id === currentUser.settings.id">
-        <b>{{ user.settings.name.full }} </b>
+        {{ user.settings.email.email }}
       </span>
-      rejected
-    </div> 
-    <b bg-get-user user-id="{{ logItem.target }}"> {{ user.settings.name.full }} </b><br> from being shared a wallet
+         
+      <!-- If the current user changed their own request, it was a cancellation -->
+      <span ng-show="user.settings.id === logItem.data.initiator">
+        canceled
+      </span>
+      <span ng-hide="user.settings.id === logItem.data.initiator">
+        rejected
+      </span>
+
+      <!-- If the rejection was for a user removal from a wallet -->
+      <span ng-show="{{ logItem.data.action === 'removed'}}">
+        the request to remove <span bg-get-user user-id="{{ logItem.data.user }}"> {{ user.settings.email.email }}</span> ({{logItem.data.permissions | bgPermissionsRoleConversionFilter }}) from wallet "<span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>"
+      </span>
+      
+      <!-- If the rejection was for adding a new user to a wallet -->
+      <span ng-hide="{{ logItem.data.action === 'removed'}}">
+        the request to invite <span bg-get-user user-id="{{ logItem.data.user }}"> {{ user.settings.email.email }}</span> to wallet "<span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>" as {{logItem.data.permissions | bgPermissionsRoleConversionFilter }}
+      </span>
+
+    </div>
+
+    <!-- uniform data -->
+    <div class="activityTable-timestamp">Approval ID: {{ logItem.target }}</div>
+    <div class="activityTable-timestamp">IP Address: {{ logItem.ip }}</div>
     <div class="activityTable-timestamp">{{ logItem.prettyDate }}</div>
   </div>
 </td>
-<td class="activityTable-wallet">
-  <span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>
-</td>
-<td class="activityTable-buttons"></td>

@@ -14,6 +14,7 @@ angular.module('BitGo.Common.BGGetUser', [])
         attrs.$observe('userId', function(val) {
           // Don't fetch if there's no id
           if (!val) {
+            scope.user = null;
             return;
           }
           // If the ID is that of the currentUser, return the rootScope's user

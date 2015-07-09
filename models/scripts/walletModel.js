@@ -65,11 +65,23 @@ angular.module('BitGo.Models.WalletModel', [])
       // get the user's role for this wallet
       function getWalletRole() {
         var permissions = self.data.permissions;
-        if (permissions.indexOf(BG_DEV.WALLET.PERMISSIONS.ADMIN) > -1) {
+
+        // Admin (can do everything)
+        if (permissions.indexOf(BG_DEV.WALLET.PERMISSIONS.ADMIN) > -1 &&
+            permissions.indexOf(BG_DEV.WALLET.PERMISSIONS.SPEND) > -1 &&
+            permissions.indexOf(BG_DEV.WALLET.PERMISSIONS.VIEW) > -1) {
           return BG_DEV.WALLET.ROLES.ADMIN;
-        } else if (permissions.indexOf(BG_DEV.WALLET.PERMISSIONS.SPEND) > -1) {
+
+        // Spender (cannot set policy)
+        } else if ( permissions.indexOf(BG_DEV.WALLET.PERMISSIONS.ADMIN) == -1 &&
+                    permissions.indexOf(BG_DEV.WALLET.PERMISSIONS.SPEND) > -1 &&
+                    permissions.indexOf(BG_DEV.WALLET.PERMISSIONS.VIEW) > -1) {
           return BG_DEV.WALLET.ROLES.SPEND;
-        } else if (permissions.indexOf(BG_DEV.WALLET.PERMISSIONS.VIEW) > -1) {
+
+        // Viewer (cannot set policy or spend)
+        } else if ( permissions.indexOf(BG_DEV.WALLET.PERMISSIONS.ADMIN) == -1 &&
+                    permissions.indexOf(BG_DEV.WALLET.PERMISSIONS.SPEND) == -1 &&
+                    permissions.indexOf(BG_DEV.WALLET.PERMISSIONS.VIEW) > -1) {
           return BG_DEV.WALLET.ROLES.VIEW;
         } else {
           throw new Error('Missing a valid wallet role for wallet ' + self.data.id);
@@ -190,20 +202,20 @@ angular.module('BitGo.Models.WalletModel', [])
     };
 
     /**
-    * Check if the users role on the wallet is 'Admin'
-    * @returns {Boolean} true if 'Admin', false if not
+    * Check if the user's role on the wallet is Admin
+    * @returns {Boolean} if is Admin
     * @public
     */
-    Wallet.prototype.isRoleAdmin = function() {
+    Wallet.prototype.roleIsAdmin = function() {
       return this.role === BG_DEV.WALLET.ROLES.ADMIN;
     };
 
     /**
-    * Check if the users role on the wallet is 'Viewer'
-    * @returns {Boolean} true if 'Viewer', false if not
+    * Check if the user's role on the wallet is a Viewer
+    * @returns {Boolean} if user is Viewer
     * @public
     */
-    Wallet.prototype.isRoleViewer = function() {
+    Wallet.prototype.roleIsViewer = function() {
       return this.role === BG_DEV.WALLET.ROLES.VIEW;
     };
 

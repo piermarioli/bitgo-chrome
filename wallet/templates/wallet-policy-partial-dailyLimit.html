@@ -34,7 +34,7 @@
       </div>
 
       <div class="col col--oneOfTwo">
-        <button name="submitChange" class="button button--inputParallel" ng-show="showSaveButton()" ng-click="submitChange()">Save change</button>
+        <button name="submitChange" class="button button--inputParallel" ng-show="showSaveButton() && !satoshiError" ng-click="submitChange()">Save change</button>
       </div>
 
     </form>

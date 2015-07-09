@@ -30,7 +30,8 @@ angular.module('BitGo.App.AppController', [])
       var openDropdown = false;
       _.forIn($rootScope.enterprises.all, function(enterprise) {
 
-        if ((enterprise.id === $rootScope.enterprises.current.id) || (_.keys(enterprise.pendingApprovals).length + enterprise.walletShareCount.incoming) === 0) {
+        if ( ($rootScope.enterprises.current && (enterprise.id === $rootScope.enterprises.current.id)) ||
+             (_.keys(enterprise.pendingApprovals).length + enterprise.walletShareCount.incoming) === 0 ) {
           return;
         }
         if (enterprise.walletShareCount.incoming > 0) {
@@ -50,6 +51,10 @@ angular.module('BitGo.App.AppController', [])
     // Header State Controls
     $scope.isCurrentEnterpriseSection = function(section) {
       return Utils.Url.getEnterpriseSectionFromUrl() === section;
+    };
+
+    $scope.isPage = function(pagePath) {
+      return $location.path() === pagePath;
     };
 
     /**
@@ -152,10 +157,6 @@ angular.module('BitGo.App.AppController', [])
       return Utils.Url.isMarketingPage();
     };
 
-    $scope.viewloaded = function () {
-      $scope.isViewLoaded = true;
-    };
-
     // Show the notification bullet for the current enterprise's Activity tab
     $scope.showApprovalIcon = function(enterpriseId) {
       if (!$rootScope.enterprises.all[enterpriseId] || _.keys($rootScope.enterprises.all[enterpriseId].pendingApprovals).length === 0) {
@@ -205,12 +206,25 @@ angular.module('BitGo.App.AppController', [])
       updateAppUser();
     });
 
+    var killBitcoinPriceListener = $rootScope.$on('MarketDataAPI.AppCurrencyUpdated', function(event, currencyData) {
+      if (currencyData && currencyData.data && currencyData.data.current && currencyData.data.current.last){
+        $scope.priceDisplay = parseFloat(currencyData.data.current.last).toFixed(2);
+      }
+    });
+
+    // Listen for the ng-view main content to be loaded
+    var killViewLoadListener = $scope.$on('$viewContentLoaded', function() {
+      $scope.isViewLoaded = true;
+    });
+
     // Clean up the event listeners when the scope is destroyed
     // This keeps the angular run loop leaner and reduces the odds that
     // a reference to this scope is kept once the controller is scrapped
     $scope.$on('$destroy', function() {
       killPlaceholderUserSetListener();
       killUserSetListener();
+      killBitcoinPriceListener();
+      killViewLoadListener();
     });
 
     function init() {

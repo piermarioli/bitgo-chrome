@@ -11,7 +11,7 @@ angular.module('BitGo.Settings.SettingsController', [])
 .controller('SettingsController', ['$modal', '$rootScope', '$scope', '$q', 'SettingsAPI', 'UserAPI', 'UtilityService', 'InternalStateService', 'BG_DEV',
   function($modal, $rootScope, $scope, $q, SettingsAPI, UserAPI, Util, InternalStateService, BG_DEV) {
     // Possible view states (sections) for this controller
-    $scope.viewStates = ['about', 'phone', 'password', 'notification', 'currency', 'developers'];
+    $scope.viewStates = ['about', 'password', 'preferences', 'developers', 'plans'];
     // The initial view state; initialized later
     $scope.state = null;
 
@@ -76,7 +76,6 @@ angular.module('BitGo.Settings.SettingsController', [])
       .then(onGetSettingsSuccess)
       .catch(onGetSettingsFail);
     };
-
 
     /**
     * Let all substates (tabs) in the settings area know of state changes

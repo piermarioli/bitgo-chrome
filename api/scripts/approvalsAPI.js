@@ -14,12 +14,12 @@ angular.module('BitGo.API.ApprovalsAPI', [])
 
     /**
     * Updates a wallet's specific approval
-    * @param {string} walletId for the approval
+    * @param {string} approvalId for the approval
     * @param {obj} object containing details needed to update the approval
     * @private
     */
-    function update(walletId, approvalData) {
-      var resource = $resource(kApiServer + '/pendingapprovals/' + walletId, {}, {
+    function update(approvalId, approvalData) {
+      var resource = $resource(kApiServer + '/pendingapprovals/' + approvalId, {}, {
         update: { method: 'PUT' }
       });
       return new resource(approvalData).$update({})

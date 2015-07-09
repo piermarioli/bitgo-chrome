@@ -9,9 +9,12 @@ angular.module('BitGo.Modals.ModalOtpFormDirective', [])
     return {
       restrict: 'A',
       require: '^ModalController',
-      controller: ['$scope', '$timeout', function($scope, $timeout) {
+      controller: ['$scope', 'CacheService', function($scope, CacheService) {
         /** form data handler */
         $scope.form = null;
+
+        // Cache setup
+        var unlockTimeCache = CacheService.getCache('unlockTime') || new CacheService.Cache('sessionStorage', 'unlockTime', 120 * 60 * 1000);
 
         function formIsValid() {
           return Util.Validators.otpOk($scope.form.otp);
@@ -39,7 +42,10 @@ angular.module('BitGo.Modals.ModalOtpFormDirective', [])
             }
 
             UserAPI.unlock(params)
-            .then(onSubmitSuccess)
+            .then(function(data) {
+              unlockTimeCache.add('time', data.session.unlock.expires);
+              onSubmitSuccess();
+            })
             .catch(onSubmitError);
           } else {
             onSubmitError();

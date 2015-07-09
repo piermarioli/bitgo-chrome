@@ -22,6 +22,7 @@ angular.module('BitGo.Wallet', [
   'BitGo.Wallet.WalletCreateStepsBackupkeyDirective',
   'BitGo.Wallet.WalletCreateStepsPasscodeDirective',
   'BitGo.Wallet.WalletCreateStepsActivateDirective',
+  'BitGo.Wallet.WalletCreateStepsInsureDirective',
   // Policy
   'BitGo.Wallet.WalletPolicyManagerDirective',
   'BitGo.Wallet.WalletPolicySpendingLimitDirective',

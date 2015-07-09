@@ -6,18 +6,26 @@
     <p ng-show="userIsCreator">
       <b>Your</b> request to send funds is awaiting approval<br>
       <b>{{ approvalItem.info.transactionRequest.requestedAmount | bgBitcoinFormat:'name':null:null:null:true }}</b>
-      <b bg-get-address-label address-id="{{ approvalItem.info.transactionRequest.destinationAddress }}" wallet-id="{{ approvalItem.bitcoinAddress }}">to {{ label }}</b>
-      <br>
-      ({{ approvalItem.info.transactionRequest.destinationAddress }})
+      <span bg-get-address-label address-id="{{ approvalItem.info.transactionRequest.destinationAddress }}" wallet-id="{{ approvalItem.bitcoinAddress }}">
+        <b>to {{ label }}</b>
+        <span ng-show="foundLabel">
+          <br>
+          ({{ approvalItem.info.transactionRequest.destinationAddress }})
+        </span>
+      </span>
     </p>
 
     <!-- Show this if someone else created the approval -->
     <p ng-hide="userIsCreator">
       <b>{{ user.settings.email.email }}</b> requested to send funds<br>
       <b>{{ approvalItem.info.transactionRequest.requestedAmount | bgBitcoinFormat:'name':null:null:null:true }}</b>
-      <b bg-get-address-label address-id="{{ approvalItem.info.transactionRequest.destinationAddress }}" wallet-id="{{ approvalItem.bitcoinAddress }}">to {{ label }}</b>
-      <br>
-      ({{ approvalItem.info.transactionRequest.destinationAddress }})
+      <span bg-get-address-label address-id="{{ approvalItem.info.transactionRequest.destinationAddress }}" wallet-id="{{ approvalItem.bitcoinAddress }}">
+        <b>to {{ label }}</b>
+        <span ng-show="foundLabel">
+          <br>
+          ({{ approvalItem.info.transactionRequest.destinationAddress }})
+        </span>
+      </span>
     </p>
 
     <div class="meta">{{ approvalItem.prettyDate }}</div>

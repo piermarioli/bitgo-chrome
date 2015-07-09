@@ -15,6 +15,14 @@ angular.module('BitGo.Auth.SignupFormDirective', [])
         // Allows us to track the user's password strength
         $scope.passwordStrength = null;
 
+        /**
+         * Sets the locked password on the scope to use in the future
+         */
+        function setLockedPassword() {
+          $scope.lockedPassword = _.clone($scope.password);
+          $scope.lockedEmail = _.clone($scope.user.settings.email.email);
+        }
+
         // This is specifically for firefox and how it handles the form autofilling
         // when a user chose to "remember my password" the autofill doesn't trip the
         // angular form handlers, so we check manually at form submit time
@@ -56,12 +64,12 @@ angular.module('BitGo.Auth.SignupFormDirective', [])
          * @private
          */
         function formIsValid() {
-          if (!Util.Validators.emailOk($scope.user.settings.email.email)) {
+          if (!Util.Validators.emailOk($scope.lockedEmail)) {
             $scope.setFormError('Please enter a valid email.');
             trackClientSignupFail('Invalid Email');
             return false;
           }
-          if (!$scope.password) {
+          if (!$scope.lockedPassword) {
             $scope.setFormError('Please enter a strong password.');
             trackClientSignupFail('Missing Password');
             return false;
@@ -75,7 +83,7 @@ angular.module('BitGo.Auth.SignupFormDirective', [])
             trackClientSignupFail('Weak Password');
             return false;
           }
-          if ($scope.password != $scope.passwordConfirm) {
+          if ($scope.lockedPassword != $scope.passwordConfirm) {
             $scope.setFormError('Please enter matching passwords.');
             trackClientSignupFail('Passwords Do Not Match');
             return false;
@@ -153,11 +161,12 @@ angular.module('BitGo.Auth.SignupFormDirective', [])
           // clear any errors
           $scope.clearFormError();
           fetchPreFilledFields();
+          setLockedPassword();
           if (formIsValid()) {
-            var formattedEmail = Util.Formatters.email($scope.user.settings.email.email);
+            var formattedEmail = Util.Formatters.email($scope.lockedEmail);
             var newUser = {
               email: formattedEmail,
-              password: Util.Crypto.sjclHmac(formattedEmail, $scope.password)
+              password: Util.Crypto.sjclHmac(formattedEmail, $scope.lockedPassword)
             };
             UserAPI.signup(newUser)
             .then(signupSuccess)

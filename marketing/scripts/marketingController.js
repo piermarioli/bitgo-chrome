@@ -6,15 +6,26 @@
  */
 angular.module('BitGo.Marketing.MarketingController', [])
 
-.controller('MarketingController', ['$location', '$scope', '$rootScope', 'NotifyService', 'EnterpriseAPI',
-  function($location, $scope, $rootScope, NotifyService, EnterpriseAPI) {
+.controller('MarketingController', ['$timeout', '$location', '$scope', '$rootScope', '$anchorScroll', 'NotifyService', 'EnterpriseAPI', 'BG_DEV',
+  function($timeout, $location, $scope, $rootScope, $anchorScroll, NotifyService, EnterpriseAPI, BG_DEV) {
 
     // We have one controller for all of the marketing pages, so we track
     // context switches using this URL-context map
     var URL_CONTEXT_MAP = {
-      '/': 'marketingHome',
-      '/platform': 'marketingAPI',
-      '/enterprise': 'marketingEnterprise'
+      '/': BG_DEV.APP_CONTEXTS.marketingHome,
+      '/platform': BG_DEV.APP_CONTEXTS.marketingAPI,
+      '/enterprise': BG_DEV.APP_CONTEXTS.marketingEnterprise,
+      '/terms': BG_DEV.APP_CONTEXTS.marketingTerms,
+      '/jobs': BG_DEV.APP_CONTEXTS.marketingJobs,
+      '/p2sh_safe_address': BG_DEV.APP_CONTEXTS.marketingWhitePaper,
+      '/insurance': BG_DEV.APP_CONTEXTS.marketingInsurance,
+      '/privacy': BG_DEV.APP_CONTEXTS.marketingPrivacy,
+      '/press': BG_DEV.APP_CONTEXTS.marketingPress,
+      '/cases': BG_DEV.APP_CONTEXTS.marketingCases,
+      '/about': BG_DEV.APP_CONTEXTS.marketingAbout,
+      '/services_agreement': BG_DEV.APP_CONTEXTS.marketingServicesAgreement,
+      '/pricing': BG_DEV.APP_CONTEXTS.marketingPricing,
+      '/sla': BG_DEV.APP_CONTEXTS.marketingSla
     };
 
     // the user info object that is submitted when someone inquires about API or platform
@@ -40,6 +51,18 @@ angular.module('BitGo.Marketing.MarketingController', [])
         company: 'TradeBlock',
         position: 'CEO'
       },
+      {
+        msg: 'Security is a top priority for us, and we are very excited about our partnership with BitGo, the recognized industry trend-setter for security of bitcoin storage and transactions.',
+        person: 'Georgy Sokolov',
+        company: 'e-Coin',
+        position: 'Co-founder'
+      },
+      {
+        msg: "The safety of our clients’ funds is our number one priority. BitGo's secure wallet and API allow us to innovate without compromising on our very high security standards.",
+        person: 'Joseph Lee',
+        company: 'BTC.sx',
+        position: 'CEO'
+      }
     ];
 
     /**

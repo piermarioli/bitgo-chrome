@@ -1,31 +1,36 @@
-<td colspan="2" bg-get-user user-id="{{ logItem.user }}">
+<td bg-get-user user-id="{{ logItem.user }}">
   <div class="activityTable-text">
-    <i class="icon icon--wallet"></i>
+
+    <!-- current user approved the policy change -->
     <span ng-show="user.settings.id === currentUser.settings.id">
-      <b>You </b>
+      You 
     </span>
     <span ng-hide="user.settings.id === currentUser.settings.id">
-      <b>{{ user.settings.name.full }} </b>
+      {{ user.settings.email.email }}
     </span>
-    approved a change to the {{ logItem.data.update.id | bgPolicyIdStringConversion }} policy<br>
+    
+    approved an update to the {{ logItem.data.update.id | bgPolicyIdStringConversion }} policy
+    on the wallet "<span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>"
 
+    <!-- policy change description -->
     <div bg-activity-tile-policy-description>
+      
       <span ng-show="logItem.isPolicyItem">
         <!-- spending limits -->
         <span ng-show="showById('com.bitgo.limit.day') || showById('com.bitgo.limit.tx')">
-          New spending limit: {{ amountInQuestion | bgBitcoinFormat:'name':null:null:'Unlimited' }}
+          The proposed limit was {{ amountInQuestion | bgBitcoinFormat:'name':null:null:'Unlimited' }}
         </span>
         <!-- whitelist -->
         <span ng-show="showById('com.bitgo.whitelist.address')">
-          {{ verb }} address: {{ addressInQuestion }}
+          The proposed address to {{ verb.toLowerCase() }} was "{{ addressInQuestion }}"
         </span>
       </span>
+
     </div>
 
+    <!-- uniform data -->
+    <div class="activityTable-timestamp">Approval ID: {{ logItem.target }}</div>
+    <div class="activityTable-timestamp">IP Address: {{ logItem.ip }}</div>
     <div class="activityTable-timestamp">{{ logItem.prettyDate }}</div>
   </div>
 </td>
-<td class="activityTable-wallet">
-  <span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>
-</td>
-<td class="activityTable-buttons"></td>

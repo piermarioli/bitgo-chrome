@@ -8,8 +8,8 @@
  */
 angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', [])
 
-.directive("bgApprovalTileTxRequest", ['$modal', '$rootScope', 'ApprovalsAPI', 'TransactionsAPI', 'NotifyService', 'UtilityService', 'BG_DEV', 'AnalyticsProxy',
-  function ($modal, $rootScope, ApprovalsAPI, TransactionsAPI, NotifyService, UtilityService, BG_DEV, AnalyticsProxy) {
+.directive("bgApprovalTileTxRequest", ['$q', '$modal', '$rootScope', 'ApprovalsAPI', 'TransactionsAPI', 'SDK', 'NotifyService', 'UtilityService', 'BG_DEV', 'AnalyticsProxy', 'UserAPI',
+  function ($q, $modal, $rootScope, ApprovalsAPI, TransactionsAPI, SDK, NotifyService, UtilityService, BG_DEV, AnalyticsProxy, UserAPI) {
     return {
       restrict: 'A',
       controller: ['$scope', function($scope) {
@@ -75,32 +75,133 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', [])
           return modalInstance.result;
         }
 
-        /** Subtmit the tx to bitgo and see if it is valid before approving the approval */
+        // function which returns a needs unlock error
+        function otpError() {
+          return $q.reject(UtilityService.ErrorHelper({
+            status: 401,
+            data: { needsOTP: true, key: null },
+            message: "Missing otp"
+          }));
+        }
+
+        /**
+         * Get the outputs from a transaction hex
+         *
+         * @param {String} txhex a transaction in hex format
+         *
+         * @returns {Object} addresses and values measured in satoshis in the form:
+         *                   {address1: value1, address2: value2, ...}
+         * @private
+         */
+        function getRecipients(txhex) {
+          var tx = Bitcoin.Transaction.deserialize(Bitcoin.Util.hexToBytes(txhex));
+          var recipients = {}; // note that this includes change addresses
+          tx.outs.forEach(function(txout, idx) {
+            var oldOutput = tx.outs[idx];
+            var outputAddresses = [];
+            oldOutput.script.extractAddresses(outputAddresses);
+            var address = outputAddresses[0].toString();
+            var recipient = {};
+            if (typeof recipients[address] === 'undefined') {
+              recipients[address] = oldOutput.value; // value is measured in satoshis
+            } else {
+              // The SDK's API does not support sending multiple different
+              // values to the same address. We have no choice but to throw an
+              // error in this case - we can't approve the transaction. Note
+              // that BitGo would never generate such a transaction, and the
+              // only way this would occur is if a user is going out of their
+              // way to produce a transaction with multiple outputs to the same
+              // address. TODO: Update the SDK's API to support sending
+              // multiple values to the same address.
+              throw new Error('The same address is detected more than once in the outputs. Approval process does not currently support this case.');
+            }
+          });
+          return recipients;
+        }
+
+        /**
+         * Submit the tx to bitgo and see if it is valid before approving the approval
+         *
+         * @returns {undefined}
+         */
         scope.submitTx = function() {
-          // Deserialize the tx to submit it
-          var deserializedTx;
+          // To approve a transaction, the inputs may have been already spent,
+          // so we must build and sign a new transaction.
+          var recipients;
           try {
             scope.txInfo.transaction = scope.approvalItem.info.transactionRequest;
-            deserializedTx = Bitcoin.Transaction.deserialize(Bitcoin.Util.hexToBytes(scope.txInfo.transaction.transaction));
+            recipients = getRecipients(scope.txInfo.transaction.transaction);
           } catch(error) {
-            console.log('Issue when deserializing the transaction');
             NotifyService.error('There is an issue with this transaction. Please refresh the page and try your action again.');
             return;
           }
-          // Set variables up for submittal
-          var sender = {
-            wallet: $rootScope.wallets.all[scope.approvalItem.bitcoinAddress],
-            passcode: scope.txInfo.passcode,
-            otp: scope.txInfo.otp
-          };
+
+          if (Object.keys(recipients).length === 2) {
+            // If the number of outputs is 2, then there is one destination
+            // address, and one change address. Of the transaction outputs, now
+            // contained insidethe recipients object, find the one that is to
+            // the destinationAddress, and set recipients to that, so we can
+            // rebuild a transaction to the correct destination address and
+            // potentially a new change address. If the number of outputs is
+            // NOT two, then we leave the "recipients" as is, which will leave
+            // the outputs set to the multiple different destination addresses
+            // plus the change addresses.
+            var destinationAddress = scope.txInfo.transaction.destinationAddress;
+            recipients = _.pick(recipients, [destinationAddress]);
+          }
+
           scope.processing = true;
 
-          var tb = new TransactionsAPI.clone(sender, deserializedTx);
-          // try to sign the transaction before handling the approval
-          tb.signTransaction(scope.txInfo.passcode, scope.txInfo.otp)
-          .then(function(transaction) {
-            // set the tx on the txInfo object before submitting
-            scope.txInfo.tx = transaction.tx();
+          var txhex, wallet, unspents;
+          return UserAPI.session()
+          .then(function(data){
+            if (data.session) {
+              // if the data returned does not have an unlock object, then the user is not unlocked
+              if (!data.session.unlock) {
+                return otpError();
+              } else {
+                // if the txvalue for this unlock exeeds transaction limit, we need to unlock again
+                if (data.session.unlock.txValue !== 0 && scope.txInfo.transaction.requestedAmount > (data.session.unlock.txValueLimit - data.session.unlock.txValue)) {
+                  return otpError();
+                }
+              }
+              return $q.when(SDK.get().wallets().get({ id: scope.approvalItem.bitcoinAddress }));
+            }
+            throw new Error('Could not fetch user session');
+          })
+          .then(function(res) {
+            wallet = res;
+            return wallet.createTransaction({ recipients: recipients });
+          })
+          .then(function(res) {
+            txhex = res.transactionHex; // unsigned txhex
+            unspents = res.unspents;
+            var fee = res.fee; // TODO: Display this fee
+            return wallet.getEncryptedUserKeychain({});
+          })
+          .then(function(keychain) {
+            // check if we have the passcode. 
+            // Incase the user has been unlocked, we dont have the passcode and need to return an error to pop up the modal
+            if (!scope.txInfo.passcode) {
+              return $q.reject(UtilityService.ErrorHelper({
+                status: 401,
+                data: { needsPasscode: true, key: null },
+                message: "Missing password"
+              }));
+            }
+            // check if encrypted xprv is present. It is not present for cold wallets
+            if (!keychain.encryptedXprv) {
+              return $q.reject(UtilityService.ErrorHelper({
+                status: 401,
+                data: {},
+                message: "Cannot transact. No user key is present on this wallet."
+              }));
+            }
+            keychain.xprv = SDK.get().decrypt({ input: keychain.encryptedXprv, password: scope.txInfo.passcode });
+            return wallet.signTransaction({ transactionHex: txhex, keychain: keychain, unspents: unspents });
+          })
+          .then(function(tx) {
+            scope.txInfo.tx = tx.tx; // signed txhex
             scope.submitApproval('approved');
           })
           .catch(function(error) {

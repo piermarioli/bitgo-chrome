@@ -2007,7 +2007,7 @@ angular.module('ui.bootstrap.modal', ['ui.bootstrap.transition'])
       };
 
       $modalStack.close = function (modalInstance, result) {
-        var modalWindow = openedWindows.get(modalInstance).value;
+        var modalWindow = openedWindows.get(modalInstance) && openedWindows.get(modalInstance).value;
         if (modalWindow) {
           modalWindow.deferred.resolve(result);
           removeModalWindow(modalInstance);
@@ -2015,7 +2015,7 @@ angular.module('ui.bootstrap.modal', ['ui.bootstrap.transition'])
       };
 
       $modalStack.dismiss = function (modalInstance, reason) {
-        var modalWindow = openedWindows.get(modalInstance).value;
+        var modalWindow = openedWindows.get(modalInstance) &&  openedWindows.get(modalInstance).value;
         if (modalWindow) {
           modalWindow.deferred.reject(reason);
           removeModalWindow(modalInstance);

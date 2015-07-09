@@ -1,1 +1,1 @@
-APP_ENV = {"version":"0.0.1","revision":"150a72e","date":"Mon Apr 20 2015 18:03:12","bitcoinNetwork":"prod"}
+APP_ENV = {"version":"0.1.2","revision":"b5c2cc5","date":"Thu Jul 09 2015 13:38:04","bitcoinNetwork":"prod"}

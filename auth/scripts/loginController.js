@@ -85,7 +85,7 @@ angular.module('BitGo.Auth.LoginController', [])
       var formattedEmail = Util.Formatters.email(safeEmail);
       var user = {
         email: formattedEmail,
-        password: Util.Crypto.sjclHmac(formattedEmail, safePassword),
+        password: safePassword,
         otp: $scope.otpCode,
         forceSMS: !!forceSMS
       };

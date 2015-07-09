@@ -1,11 +1,7 @@
-<td colspan="2" bg-get-user user-id="{{ logItem.user }}">
+<td bg-get-user user-id="{{ logItem.user }}">
   <div class="activityTable-text">
-    <i class="icon icon--user"></i>
-    <b>You </b>changed your settings<br>
+    You changed your account settings
+    <div class="activityTable-timestamp">IP Address: {{ logItem.ip }}</div>
     <div class="activityTable-timestamp">{{ logItem.prettyDate }}</div>
   </div>
 </td>
-<td class="activityTable-wallet">
-  <span bg-get-local-wallet wallet-id="{{ logItem.walletId }}">{{ label }}</span>
-</td>
-<td class="activityTable-buttons"></td>

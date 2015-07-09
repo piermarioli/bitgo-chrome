@@ -2,12 +2,12 @@
 
   <!-- Show this if the user created the approval -->
   <div ng-show="userIsCreator" class="activityTable-text">
-    <i class="icon icon--wallet"></i>
     Your request to change the per-transaction spending limit is awaiting approval<br>
     New limit
       <b>
         <span ng-show="approvalItem.info.policyRuleRequest[approvalItemAction].condition.amount >= 0">{{ approvalItem.info.policyRuleRequest[approvalItemAction].condition.amount | bgBitcoinFormat:null:null:null:'Unlimited':true }}</span>
-        <span ng-hide="approvalItem.info.policyRuleRequest.action === 'remove'">Unlimited</span>
+        <span ng-show="approvalItem.info.policyRuleRequest.action === 'remove'">Unlimited</span>
+        {{ null | bgBitcoinFormat:'name':null:null:'' }}
       </b>
     <br>
     <div class="activityTable-timestamp">{{ approvalItem.prettyDate }}</div>
@@ -15,12 +15,12 @@
 
   <!-- Show this if someone else created the approval -->
   <div ng-hide="userIsCreator" class="activityTable-text">
-    <i class="icon icon--wallet"></i>
     <b>{{ user.settings.email.email }} </b>requested to change the per-transaction spending limit<br>
     New limit
       <b>
         <span ng-show="approvalItem.info.policyRuleRequest[approvalItemAction].condition.amount >= 0">{{ approvalItem.info.policyRuleRequest[approvalItemAction].condition.amount | bgBitcoinFormat:null:null:null:'Unlimited':true }}</span>
-        <span ng-hide="approvalItem.info.policyRuleRequest.action === 'remove'">Unlimited</span>
+        <span ng-show="approvalItem.info.policyRuleRequest.action === 'remove'">Unlimited</span>
+        {{ null | bgBitcoinFormat:'name':null:null:'' }}
       </b>
     <br>
     <div class="activityTable-timestamp">{{ approvalItem.prettyDate }}</div>

@@ -5,8 +5,8 @@ angular.module('BitGo.Enterprise.ActivityAuditLogDirective', [])
   Helps with:
   - fetching and displaying all of the audit log
  */
-.directive('activityAuditLog', ['$q', 'UtilityService', 'NotifyService', 'InfiniteScrollService', 'AuditLogAPI',
-  function($q, Util, Notify, InfiniteScrollService, AuditLogAPI) {
+.directive('activityAuditLog', ['$q', 'UtilityService', 'NotifyService', 'InfiniteScrollService', 'AuditLogAPI', 'BG_DEV',
+  function($q, Util, Notify, InfiniteScrollService, AuditLogAPI, BG_DEV) {
     return {
       restrict: 'A',
       require: '^EnterpriseActivityController',

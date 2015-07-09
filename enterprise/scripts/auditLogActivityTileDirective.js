@@ -3,8 +3,8 @@ angular.module('BitGo.Enterprise.AuditLogActivityTileDirective', [])
  * Manages the logic for ingesting an audit log item and outputting
  * the right template item to the DOM
  */
-.directive('auditLogActivityTile', ['$compile', '$http', '$templateCache',
-  function($compile, $http, $templateCache) {
+.directive('auditLogActivityTile', ['$compile', '$http', '$templateCache', 'BG_DEV',
+  function($compile, $http, $templateCache, BG_DEV) {
     // Returns the template path to compile based on logItem.type
     var getTemplate = function(logItemType) {
       var template = '';
@@ -19,13 +19,10 @@ angular.module('BitGo.Enterprise.AuditLogActivityTileDirective', [])
         case 'approveTransaction':
         case 'rejectTransaction':
         // Policy Changes
-        case 'addPolicy':
         case 'changePolicy':
-        case 'removePolicy':
         case 'approvePolicy':
         case 'rejectPolicy':
         // User Shares
-        case 'addUser':
         case 'removeUser':
         case 'shareUser':
         case 'shareUserAccept':
@@ -61,9 +58,11 @@ angular.module('BitGo.Enterprise.AuditLogActivityTileDirective', [])
       restrict: 'A',
       replace: true,
       link: function(scope, element, attrs) {
+        // backupsource constants are set on the scope so they be accessed from html
+        scope.backupSource = BG_DEV.AUDIT_LOG.BACKUP_KEY_METHODS;
+
         function checkPolicyItem(logItemType) {
           switch(logItemType) {
-            case 'addPolicy':
             case 'changePolicy':
             case 'removePolicy':
             case 'approvePolicy':
@@ -79,11 +78,13 @@ angular.module('BitGo.Enterprise.AuditLogActivityTileDirective', [])
         // Bool for if the action is a policy item
         scope.logItem.isPolicyItem = checkPolicyItem(scope.logItem.type);
         // init the template
+
         $http.get(getTemplate(scope.logItem.type), {cache: $templateCache})
         .success(function(html) {
           element.html(html);
           $compile(element.contents())(scope);
         });
+
       }
     };
   }

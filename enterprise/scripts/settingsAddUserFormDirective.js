@@ -33,6 +33,7 @@ angular.module('BitGo.Enterprise.SettingsAddUserFormDirective', [])
           }
           // clear any errors
           $scope.clearFormError();
+
           if (formIsValid()) {
             UserAPI.sharingkey({email: $scope.email}).then(function(data){
               params = {

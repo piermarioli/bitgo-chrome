@@ -16,6 +16,9 @@ angular.module('BitGo.Auth.SignupController', [])
     $scope.password = null;
     $scope.passwordConfirm = null;
     $scope.agreedToTerms = false;
+    // Fields needed so to lock password and email from lastpass
+    $scope.lockedPassword = null;
+    $scope.lockedEmail = null;
 
     // Even handlers
     var killUserSetListener = $rootScope.$on('UserAPI.CurrentUserSet', function(evt, data) {
