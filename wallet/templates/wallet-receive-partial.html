@@ -1,8 +1,9 @@
 <main wallet-receive-manager>
 
   <div class="row u-marginBottom30" wallet-receive-current-receive-address-manager>
-    <div class="u-staticWidth88p u-pullLeft">
+    <div class="u-staticWidth88p u-pullLeft relative">
       <label>Current Receive Address</label>
+      <div class="u-pullRight inputText-verification inputText-verification--info receiveLabel" ng-click="useAltCoin()" feature-flag="shapeshift">Receive Altcoins</div>
       <div class="inputText">
         <input type="text" ng-model="currentReceiveAddress.address" class="inputText-input" disabled="disabled">
 
@@ -11,11 +12,11 @@
         <div class="inputText-verification inputText-verification--info" ng-show="canGenerateAddress()" ng-click="generateNewReceiveAddress()">Generate New Address</div>
       </div>
       <form>
-        <div class="formRow" ng-class="{ 'formRow--error': temporaryLabelError }">
+        <div class="formRow u-clear" ng-class="{ 'formRow--error': temporaryLabelError }">
           <div class="inputText">
             <input type="text" name="temporaryLabel" ng-model="currentReceiveAddress.temporaryLabel" ng-focus="emptyTemporary(currentReceiveAddress)" bg-input-validator class="inputText-input" ng-class="{ 'disabled' : cannotEditLabel()}" placeholder="Address label">
           </div>
-	  
+
           <div ng-show="canShowMainEditButtons()">
             <button type="submit" class="button" ng-click="saveMainLabel(currentReceiveAddress, currentReceiveAddress.temporaryLabel)">Save</button>
             <button class="button button--grey" ng-click="cancelMainLabelSave()">Cancel</button>

@@ -1,8 +1,8 @@
 // Model for Enterprises
 angular.module('BitGo.Models.EnterpriseModel', [])
 
-.factory('EnterpriseModel', ['$rootScope',
-  function($rootScope) {
+.factory('EnterpriseModel', ['$rootScope', 'BG_DEV',
+  function($rootScope, BG_DEV) {
     // Constant to define the 'personal' enterprise
     // Note: everything is scoped to an enterprise; thus wallets without
     // an enterprise (personal wallets) can be grouped under the 'personal' enterprise
@@ -10,7 +10,7 @@ angular.module('BitGo.Models.EnterpriseModel', [])
       id: 'personal',
       name: 'Personal',
       primaryContact: '',
-      emergencyPhone: ''
+      emergencyPhone: '',
     };
 
     // If there is no enterprise info passed in, it means we're
@@ -25,12 +25,21 @@ angular.module('BitGo.Models.EnterpriseModel', [])
       this.primaryContact = data.primaryContact;
       this.emergencyPhone = data.emergencyPhone;
       this.isPersonal = (this.id === PERSONAL_ENTERPRISE.id && this.name === PERSONAL_ENTERPRISE.name);
+      this.latestSAVersionSigned = data.latestSAVersionSigned;
       this.walletCount = 0;
       this.balance = 0;
       this.walletShareCount = {
         incoming: 0,
         outgoing: 0
       };
+      this.supportPlan = data.supportPlan;
+      this.customerData = data.customerData;
+      // TODO Barath: A better way to check if the user is admin of an enterprise?
+      this.isAdmin = !!data.primaryContact;
+      // If the enterprise is personal, the user is an admin on it
+      if (this.isPersonal) {
+        this.isAdmin = true;
+      }
     }
 
     /**
@@ -156,25 +165,36 @@ angular.module('BitGo.Models.EnterpriseModel', [])
     };
 
     /**
-    * Decorator: Adds approvals to the enterprise object (based on all wallets
-    * associated with the enterprise)
-    * @param wallets {Object} all wallets associated with this enterprise
+    * Decorator: Adds approvals to the enterprise object 
+    * @param approvals {Array} approvals associated with this enterprise
     * @returns {Int} num of keys in the enterprise's pending approval object
     * @public
     */
-    Enterprise.prototype.setApprovals = function(wallets) {
-      var result = {};
-      _.forIn(wallets, function(wallet) {
-        var approvals = wallet.data.pendingApprovals;
-        if (approvals) {
-          // Build the enterprise's pendingApprovals array
-          _.forEach(approvals, function(approval) {
-            result[approval.id] = approval;
-          });
-        }
+    Enterprise.prototype.setApprovals = function(approvals) {
+      if (!approvals) {
+        return;
+      }
+      if (!this.pendingApprovals) {
+        this.pendingApprovals = {};
+      }
+      var self = this;
+      _.forEach(approvals, function(approval) {
+        self.pendingApprovals[approval.id] = approval;
       });
-      this.pendingApprovals = result;
       return _.keys(this.pendingApprovals).length;
+    };
+
+    /**
+    * Check if an enterprise has a credit card on file
+    *
+    * @returns { Bool }
+    * @public
+    */
+    Enterprise.prototype.hasPaymentOnFile = function() {
+      return  this.customerData &&
+              this.customerData.sources &&
+              this.customerData.sources.data &&
+              this.customerData.sources.data.length > 0;
     };
 
     /**

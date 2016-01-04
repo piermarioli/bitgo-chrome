@@ -1,10 +1,8 @@
+/* istanbul ignore next */
 angular.module('BitGo.API.PolicyAPI', [])
 
-.factory('PolicyAPI', ['$resource', '$rootScope', 'UtilityService',
-  function($resource, $rootScope, UtilityService) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+.factory('PolicyAPI', ['$rootScope', 'SDK',
+  function($rootScope, SDK) {
 
     /**
     * Update a policy rule on specified wallet
@@ -15,13 +13,11 @@ angular.module('BitGo.API.PolicyAPI', [])
       if (!params.rule || !params.bitcoinAddress) {
         throw new Error('invalid params');
       }
-      var resource = $resource(kApiServer + '/wallet/' + params.bitcoinAddress + '/policy/rule', {}, {
-        'save': { method: 'PUT' }
-      });
-      return new resource.save(params.rule).$promise
-      .then(
-        PromiseSuccessHelper(),
-        PromiseErrorHelper()
+      console.log(JSON.stringify(params.rule, null, 2));
+      return SDK.wrap(
+        SDK.get()
+        .newWalletObject({id: params.bitcoinAddress})
+        .updatePolicyRule(params.rule)
       );
     }
 
@@ -34,11 +30,10 @@ angular.module('BitGo.API.PolicyAPI', [])
       if (!params.id || !params.bitcoinAddress) {
         throw new Error('invalid params');
       }
-      var resource = $resource(kApiServer + '/wallet/' + params.bitcoinAddress + '/policy/rule', { id: params.id });
-      return new resource.delete().$promise
-      .then(
-        PromiseSuccessHelper(),
-        PromiseErrorHelper()
+      return SDK.wrap(
+        SDK.get()
+        .newWalletObject({id: params.bitcoinAddress})
+        .deletePolicyRule({id: params.id})
       );
     }
 

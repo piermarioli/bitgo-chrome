@@ -4,8 +4,8 @@
  */
 angular.module('BitGo.Wallet.WalletSendManagerDirective', [])
 
-.directive('walletSendManager', ['$q', '$timeout', '$rootScope', '$location', 'NotifyService', 'CacheService', 'UtilityService', 'TransactionsAPI', 'SDK', 'BG_DEV',
-  function($q, $timeout, $rootScope, $location, NotifyService, CacheService, UtilityService, TransactionsAPI, SDK, BG_DEV) {
+.directive('walletSendManager', ['$q', '$timeout', '$rootScope', '$location', 'NotifyService', 'CacheService', 'UtilityService', 'TransactionsAPI', 'SDK', 'BG_DEV', 'AnalyticsProxy',
+  function( $q, $timeout, $rootScope, $location, NotifyService, CacheService, UtilityService, TransactionsAPI, SDK, BG_DEV, AnalyticsProxy) {
     return {
       restrict: 'A',
       require: '^WalletController',
@@ -73,7 +73,27 @@ angular.module('BitGo.Wallet.WalletSendManagerDirective', [])
             recipientAddress: null,
             recipientAddressType: 'bitcoin',
             // optional message for the tx
-            message: null
+            message: null,
+
+            // Wrap the whole shapeshift integration into this object
+            altCoin: {
+
+              useAltCoin:   false, // This flag tells if user wants to use an alt Coin
+              selected:     null,  // Selected alternative coin from the dropdown
+
+              symbol:       null,  // Symbol of the selected coin
+              rate:         0,     // Conversion rate between bitcoins and the alt coin
+              limit:        0,     // Shapeshift max limit for exchange.
+              min:          0,     // Shapeshift minimun limit for exchange
+              minerFee:     0,     // Miner Fees
+              rateSatoshis: 0,     // This is the amount that the user will receive after substracting the shapeshift miner fee
+
+              recipientAddress: null, // Alternative coin to send the money through Shapeshift
+              returnAddres:     null, // Returning address for Shapeshift
+              depositAddress:   null  // Shapeshift deposit address
+
+            }
+
           };
         }
 
@@ -104,7 +124,9 @@ angular.module('BitGo.Wallet.WalletSendManagerDirective', [])
             // wallet id).
             return wallet.createTransaction({
               recipients: recipients,
-              changeAddress: wallet.id()
+              changeAddress: wallet.id(),
+              minConfirms: 1,
+              enforceMinConfirmsForChange: false
             });
           })
           .then(function(res) {
@@ -121,7 +143,7 @@ angular.module('BitGo.Wallet.WalletSendManagerDirective', [])
 
         function init() {
           $rootScope.setContext('walletSend');
-
+          AnalyticsProxy.track('WalletSendEntered');
           $scope.state = 'prepareTx';
           $scope.showFeeAlert = false;
           setNewTxObject();

@@ -13,39 +13,6 @@ angular.module('BitGo.Auth.SetPhoneFormDirective', [])
           return Util.Validators.phoneOk($scope.user.settings.phone.phone);
         }
 
-        // Now request that an otp code be sent to the user's new (unverified) number
-        function onSetPhoneSuccess(user) {
-          // Track the phone set success
-          AnalyticsProxy.track('SetPhone');
-
-          var phone = $scope.user.settings.phone.phone;
-          if (phone) {
-            var params = {
-              type: "phone"
-            };
-            UserAPI.request(params);
-          }
-          return $scope.$emit('SetState', 'verifyPhone');
-        }
-
-        /**
-         * Handle server fail when setting phone on login
-         * @param error {Object}
-         * @private
-         */
-        function onSetPhoneFail(error) {
-          Notify.error(error.error);
-
-          // Track the phone set server fail
-          var metricsData = {
-            // Error Specific Data
-            status: error.status,
-            message: error.error,
-            action: 'Set Phone'
-          };
-          AnalyticsProxy.track('Error', metricsData);
-        }
-
         // Sets a new (unverified) phone number on the user
         // Note: as long as the phone number is not verified, we can set new phone
         // numbers on the user and sent otps to them -- but once verified, there
@@ -54,14 +21,15 @@ angular.module('BitGo.Auth.SetPhoneFormDirective', [])
           // Clear any errors
           $scope.clearFormError();
           if (formIsValid()) {
-            var data = {
-              settings: { phone: { phone: $scope.user.settings.phone.phone } }
-            };
-            SettingsAPI.save(data)
-            .then(onSetPhoneSuccess)
-            .catch(onSetPhoneFail);
+            // Track the phone set success
+            AnalyticsProxy.track('SetPhone');
+
+            UserAPI.sendOTP({ phone:  $scope.user.settings.phone.phone })
+            .then(function() {
+              $scope.$emit('SetState', 'verifyPhone');
+            });
           } else {
-            $scope.setFormError('Please add a valid phone numer.');
+            $scope.setFormError('Please add a valid phone number.');
 
             // Track the phone set fail on the client
             var metricsData = {

@@ -100,6 +100,15 @@ angular.module('BitGo.Modals.ModalController', [])
         case BG_DEV.MODAL_TYPES.qrReceiveAddress:
           tpl = 'modal/templates/qrReceiveAddress.html';
           break;
+        case BG_DEV.MODAL_TYPES.ssReceiveAltCoin:
+          tpl = 'modal/templates/ssReceiveAltCoin.html';
+          break;
+        case BG_DEV.MODAL_TYPES.createWallet:
+          tpl = 'modal/templates/createWallet.html';
+          break;
+        case BG_DEV.MODAL_TYPES.fundWallet:
+          tpl = 'modal/templates/fundWallet.html';
+          break;
         default:
           tpl = 'modal/templates/default.html';
           break;

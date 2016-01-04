@@ -80,7 +80,8 @@ angular.module('BitGo.Wallet.WalletCreateStepsLabelDirective', [])
 
             // track the successful label advancement
             var metricsData = {
-              walletLabel: $scope.inputs.walletLabel
+              walletLabel: $scope.inputs.walletLabel,
+              invitation: !!$rootScope.invitation
             };
             AnalyticsProxy.track('LabelWallet', metricsData);
 

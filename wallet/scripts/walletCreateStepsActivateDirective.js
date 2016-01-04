@@ -145,15 +145,33 @@ angular.module('BitGo.Wallet.WalletCreateStepsActivateDirective', [])
                 data: $scope.generated.encryptedWalletPasscode
               }
             };
-            // Backup entry depends on whether it's a user-supplied xpub or not
-            if ($scope.inputs.useOwnBackupKey) {
+            // Backup entry depends on who supplied the xpub
+            if ($scope.inputs.backupKeyProvider) {
+              var backupKeyProviderName = $scope.inputs.backupKeyProviderDisplayName();
+              var backupKeyProviderUrl = $scope.inputs.backupKeyProviderUrl();
+              // User supplied the xpub
+              qrdata.backup = {
+                title: 'B: Backup Key',
+                img: '#qrEncryptedUserProvidedXpub',
+                desc:
+                  'This is the public half of your key held at ' + backupKeyProviderName + ', a key recovery service. \r\n' +
+                  'For more information visit: ' + backupKeyProviderUrl,
+                data: $scope.generated.walletBackupKeychain.xpub
+              };
+            } else if ($scope.inputs.useOwnBackupKey) {
+              // User supplied the xpub
               qrdata.backup = {
                 title: 'B: Backup Key',
                 img: '#qrEncryptedUserProvidedXpub',
                 desc: 'This is the public portion of your backup key, which you provided.',
                 data: $scope.generated.walletBackupKeychain.xpub
               };
+              // update description for backup keys generated from ColdKey app
+              if ($scope.inputs.coldKey === $scope.inputs.backupPubKey) {
+                qrdata.backup.desc = 'This is the public portion of your backup key generated using BitGo KeyTool.';
+              }
             } else {
+              // User generated in the current session
               qrdata.backup = {
                 title: 'B: Backup Key',
                 img: '#qrEncryptedBackupKey',
@@ -330,13 +348,6 @@ angular.module('BitGo.Wallet.WalletCreateStepsActivateDirective', [])
               // Get the latest wallets for the app
               WalletsAPI.getAllWallets();
 
-              // If the user isn't upgraded, prompt an insure wallet step
-              if ($rootScope.currentUser.isBasic() || $rootScope.currentUser.isGrandfathered()) {
-                if ($rootScope.enterprises.current && $rootScope.enterprises.current.isPersonal) {
-                  $scope.setState('insure');
-                  return;
-                }
-              }
               // redirect to the wallets dashboard
               $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/wallets');
             })

@@ -53,10 +53,6 @@ angular.module('BitGo.Wallet.WalletPolicySpendingLimitDirective', [])
             $scope.setFormError('Please enter a valid limit.');
             return false;
           }
-          if (amount > BG_DEV.TX.MAXIMUM_BTC_SPENDING_LIMIT) {
-            $scope.setFormError('This amount is too large to use.');
-            return false;
-          }
           return true;
         }
 
@@ -140,7 +136,7 @@ angular.module('BitGo.Wallet.WalletPolicySpendingLimitDirective', [])
           $rootScope.wallets.current.addApproval(approval);
           // Then update the all pending approvals on the current enterprise
           // because the enterprise needs to know about all new pending approvals
-          $rootScope.enterprises.current.setApprovals($rootScope.wallets.all);
+          $rootScope.enterprises.current.setApprovals(approval);
           // reset the local/actual policy - no update is needed b/c of approval
           tryInitFromUserPolicy();
         }

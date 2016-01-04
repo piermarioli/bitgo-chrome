@@ -11,8 +11,8 @@
  */
 angular.module('BitGo.Wallet.WalletPolicyWhitelistManagerDirective', [])
 
-.directive('walletPolicyWhitelistManager', ['$rootScope', 'NotifyService', 'PolicyAPI', 'LabelsAPI', 'WalletsAPI', 'WalletModel', 'BG_DEV', 'InternalStateService', 'AnalyticsProxy',
-  function($rootScope, NotifyService, PolicyAPI, LabelsAPI, WalletsAPI, WalletModel, BG_DEV, InternalStateService, AnalyticsProxy) {
+.directive('walletPolicyWhitelistManager', ['$rootScope', 'NotifyService', 'PolicyAPI', 'LabelsAPI', 'WalletsAPI', 'WalletModel', 'BG_DEV', 'InternalStateService', 'AnalyticsProxy', '$location',
+  function($rootScope, NotifyService, PolicyAPI, LabelsAPI, WalletsAPI, WalletModel, BG_DEV, InternalStateService, AnalyticsProxy, $location) {
     // current section name
     var CURRENT_SECTION = 'whitelist';
 
@@ -84,7 +84,7 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistManagerDirective', [])
           $rootScope.wallets.current.addApproval(approval);
           // Then update the all pending approvals on the current enterprise
           // because the enterprise needs to know about all new pending approvals
-          $rootScope.enterprises.current.setApprovals($rootScope.wallets.all);
+          $rootScope.enterprises.current.setApprovals(approval);
           return true;
         }
 
@@ -138,6 +138,7 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistManagerDirective', [])
             bitcoinAddress: $rootScope.wallets.current.data.id,
             rule: {
               id: $scope.policy.id,
+              type: 'bitcoinAddressWhitelist',
               condition: {
                 remove: tileItem.address
               },
@@ -207,13 +208,13 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistManagerDirective', [])
       link: function(scope, ele, attrs) {
 
         /**
-        * Take the user to their account settings - plans page
+        * Take the user to the create org page
         *
         * @public
         */
-        scope.goToPlans = function() {
+        scope.goToCreateOrg = function() {
           AnalyticsProxy.track('clickUpsell', { type: 'whitelist' });
-          InternalStateService.goTo('personal_settings:plans');
+          $location.path('/create-organization');
         };
       }
     };

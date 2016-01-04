@@ -14,6 +14,13 @@ angular.module('BitGo.Utility.UtilityService', [])
       return new Uint8Array(length);
     }
 
+    /** [VisibleError description] */
+    function VisibleError(str) {
+      var err = new Error(str);
+      err.error = str;
+      return err;
+    }
+
     // Conversion Utils
     var Converters = {
       /**
@@ -75,7 +82,7 @@ angular.module('BitGo.Utility.UtilityService', [])
         return p1 === p2;
       },
       otpOk: function(otp) {
-        return (/^\d{7}$/).test(otp);
+        return (/^\d{6,7}$/).test(otp) || (/^[a-z]{44}$/).test(otp);
       },
       currencyOk: function(currency) {
         if (!currency) {
@@ -110,97 +117,6 @@ angular.module('BitGo.Utility.UtilityService', [])
       }
     };
 
-    // Crypto Utils
-    var Crypto = {
-      // Create a cryptographically secure password of n_words characters
-      generateRandomPassword: function(n_words) {
-        n_words = n_words || 7;
-        return Bitcoin.Base58.encode(sjcl.random.randomWords(n_words));
-      },
-      // Note: sjclEncrypt is how we like to use sjcl encryption.  The defaults are okay,
-      // but we like to do more stretching.  Because customers think AES256 is better than AES128,
-      // we use that too.
-      /**
-       * Encrypts a message with a password
-       *
-       * @public
-       * @param {String} password string
-       * @param {String} message string
-       * @returns {string} message encrypted with the password
-       */
-      sjclEncrypt: function(password, message) {
-        var options = { iter: 10000, ks: 256 };
-        return sjcl.encrypt(password, message, options);
-      },
-      /**
-       * Decrypts a message with a password
-       *
-       * @public
-       * @param {String} password string
-       * @param {String} message string
-       * @returns {string} decrypted message
-       */
-      sjclDecrypt: function(password, message) {
-        return sjcl.decrypt(password, message);
-      },
-      /**
-       * Hashes a value to a key
-       *
-       * @public
-       * @param {String} key string
-       * @param {Object} any object to hash
-       * @returns Hashed value
-       */
-      sjclHmac: function(key, value) {
-        var out =  (new sjcl.misc.hmac(sjcl.codec.utf8String.toBits(key), sjcl.hash.sha256)).mac(value);
-        return sjcl.codec.hex.fromBits(out).toLowerCase();
-      },
-      prng: undefined,
-      setPrng: function(prng) {
-        if (!prng) {
-          throw new Error('no prng initialized');
-        }
-        // Kick off event watchers which are used to initialize the PRNG
-        this.prng = prng;
-      },
-      /**
-       * Creates and ECDH secret. Used for creating and accepting wallet share
-       *
-       * @public
-       * @param {String} priv key of the user
-       * @param {String} pub key of the person to share with
-       * @returns {String} the ECDH secret
-       */
-      getECDHSecret: function(privKey, pubKey){
-        var otherKey = new Bitcoin.ECKey('0');
-        otherKey.setPub(pubKey);
-        var secretPoint = otherKey.getPubPoint().multiply(privKey);
-        var secret = secretPoint.getX().toBigInteger().toByteArrayUnsigned();
-        return Bitcoin.Util.bytesToHex(secret).toLowerCase();
-      }
-    };
-
-    // Bitcoin Utils
-    var BitcoinJSLibAugment = {
-      BIP32: {
-        // Function to create a BIP32 object from an xprv that might be corrupted with
-        // the bad padding bug.
-        createFromXprv: function(xprv) {
-          var rootExtKey;
-          try {
-            rootExtKey = new Bitcoin.BIP32(xprv);
-          } catch (e) {
-            // Check if this is the improperly encoded key problem.
-            if (e.message !== 'Not enough data') {
-              throw e;
-            }
-            rootExtKey = new Bitcoin.BIP32().initFromBadXprv(xprv);
-          }
-          return rootExtKey;
-        }
-      }
-    };
-
     // Browser Utils
     var Global = {
       isChromeApp: location.protocol === "chrome-extension:",
@@ -217,7 +133,7 @@ angular.module('BitGo.Utility.UtilityService', [])
       scrubQueryString: function(param) {
         var urlParams = $location.search();
         var scrubTypes = {
-          phone: ['setPhone', 'verifyPhone'],
+          device: ['setOtpDevice'],
           email: ['needsEmailVerify']
         };
 
@@ -257,6 +173,21 @@ angular.module('BitGo.Utility.UtilityService', [])
           }
         });
         return marketingPage;
+      },
+      isAccountSettingsPage: function() {
+        var url = $location.path().split('/');
+        // E.g.: /settings
+        return url.indexOf('settings') === 1;
+      },
+      isEnterpriseSettingsPage: function() {
+        var url = $location.path().split('/');
+        // E.g.: /enterprise//enterpriseId/settings
+        return url.indexOf('settings') === 3;
+      },
+      isCreateEnterprisePage: function() {
+        var url = $location.path().split('/');
+        // E.g.: /create-organization
+        return url.indexOf('create-organization') > -1;
       }
     };
 
@@ -268,18 +199,16 @@ angular.module('BitGo.Utility.UtilityService', [])
       },
       // Set the server api route
       setApiServer: function() {
+        var server;
         if (Global.isChromeApp) {
-          var server = 'https://test.bitgo.com';  // default to testnet.
-          if (typeof(APP_ENV) === 'undefined') {
-            console.log("WARNING:  Chrome app env undefined");
-          } else if (APP_ENV.bitcoinNetwork != 'testnet') {
-            server = 'https://www.bitgo.com';
-          }
-          this.apiServer = server;
+          server = 'https://test.bitgo.com';  // default to testnet.
         } else {
-          this.apiServer = location.protocol + '//' + location.hostname + (location.port && ':' + location.port);
+          server = location.protocol + '//' + location.hostname + (location.port && ':' + location.port);
         }
-        this.apiServer += "/api/v1";
+        if (typeof(APP_ENV) !== 'undefined' && APP_ENV.bitcoinNetwork !== 'testnet') {
+          server = 'https://www.bitgo.com';
+        }
+        this.apiServer = server + "/api/v1";
       },
       promiseSuccessHelper: function(property) {
         return function(successData) {
@@ -313,6 +242,10 @@ angular.module('BitGo.Utility.UtilityService', [])
           // Handle the case when the user loses browser connection
           if (showOfflineError(error)) {
             $rootScope.$emit('UtilityService.AppIsOffline');
+          }
+
+          if (error.invalidToken) {
+            $rootScope.$emit('UtilityService.InvalidToken');
           }
 
           var formattedError = {
@@ -383,14 +316,13 @@ angular.module('BitGo.Utility.UtilityService', [])
 
     return {
       API: API,
-      BitcoinJSLibAugment: BitcoinJSLibAugment,
       Converters: Converters,
-      Crypto: Crypto,
       Formatters: Formatters,
       Global: Global,
       Url: Url,
       Validators: Validators,
-      ErrorHelper: ErrorHelper
+      ErrorHelper: ErrorHelper,
+      VisibleError: VisibleError
     };
   }
 ]);

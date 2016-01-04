@@ -3,11 +3,8 @@ angular.module('BitGo.API.LabelsAPI', [])
   Notes:
   - This module is for managing all http requests for labels
 */
-.factory('LabelsAPI', ['$q', '$location', '$resource', '$rootScope', 'UtilityService', 'CacheService',
-  function($q, $location, $resource, $rootScope, UtilityService, CacheService) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+.factory('LabelsAPI', ['$location', '$rootScope', 'CacheService', 'SDK',
+  function($location, $rootScope, CacheService, SDK) {
 
     // simple in-memory cache
     var labelsCache = {};
@@ -85,18 +82,20 @@ angular.module('BitGo.API.LabelsAPI', [])
     }
 
     // Add a label to an address for a wallet
+    /* istanbul ignore next */
     function add(params) {
-      var resource = $resource(kApiServer + '/labels/' + params.walletId + '/' + params.address, {}, {
-        'save': { method: 'PUT' }
+      return SDK.wrap(
+        SDK.get()
+        .newWalletObject({id: params.walletId})
+        .setLabel({
+          address: params.address,
+          label: params.label
+        })
+      )
+      .then(function(data) {
+        addLabelToCache(data);
+        return data;
       });
-      return new resource.save({ label: params.label }).$promise
-      .then(
-        function(data) {
-          addLabelToCache(data);
-          return data;
-        },
-        PromiseErrorHelper()
-      );
     }
 
     /**
@@ -106,45 +105,36 @@ angular.module('BitGo.API.LabelsAPI', [])
      * @public
      */
     function remove(params) {
-      if (!params.walletId || !params.address) {
-        return;
-      }
-      var resource = $resource(kApiServer + '/labels/' + params.walletId + '/' + params.address, {});
-      return new resource({}).$delete()
-      .then(
-        function(data) {
-          removeLabelFromCache(data);
-          return data;
-        },
-        PromiseErrorHelper()
-      );
+      return SDK.wrap(
+        SDK.get()
+        .newWalletObject({id: params.walletId})
+        .deleteLabel({ address: params.address })
+      )
+      .then(function(data) {
+        removeLabelFromCache(data);
+        return data;
+      });
     }
 
-    // Return a list of labeled addresses associated with a wallet
+    // Return a list of labeled addresses across all wallets
     function list() {
       // Cache was already loaded - return it
       if (!_.isEmpty(labelsCache)) {
-        return $q.when(labelsCache);
+        return SDK.wrap(labelsCache);
       }
-      var resource = $resource(kApiServer + '/labels/', {});
-      return resource.get({}).$promise
-      .then(
-        function(data) {
-          _.forEach(data.labels, function(label) {
-            addLabelToCache(label);
-          });
-          return labelsCache;
-        },
-        PromiseErrorHelper()
-      );
+      return SDK.wrap(
+        SDK.doGet('/labels')
+      )
+      .then(function(data) {
+        _.forEach(data.labels, function(label) {
+          addLabelToCache(label);
+        });
+        return labelsCache;
+      });
     }
 
     // Return a label for an address hopefully scoped by wallet
     function get(address, walletId) {
-      if (!walletId || !address) {
-        console.log('Missing get address arguments');
-        return $q.reject();
-      }
       return list()
       .then(function() {
         var cacheEntry = labelsCache[address];

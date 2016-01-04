@@ -9,8 +9,8 @@
  */
 angular.module('BitGo.Wallet.WalletPolicyManagerDirective', [])
 
-.directive('walletPolicyManager', ['$rootScope', 'NotifyService', 'BG_DEV',
-  function($rootScope, NotifyService,BG_DEV) {
+.directive('walletPolicyManager', ['$rootScope', 'NotifyService', 'BG_DEV', 'AnalyticsProxy',
+  function($rootScope, NotifyService, BG_DEV, AnalyticsProxy) {
     return {
       restrict: 'A',
       controller: ['$scope', function($scope) {
@@ -75,7 +75,7 @@ angular.module('BitGo.Wallet.WalletPolicyManagerDirective', [])
 
         function init() {
           $rootScope.setContext('walletPolicy');
-
+          AnalyticsProxy.track('WalletPolicyEntered');
           $scope.state = 'dailyLimit';
         }
         init();

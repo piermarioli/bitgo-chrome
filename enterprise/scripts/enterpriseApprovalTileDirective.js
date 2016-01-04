@@ -43,6 +43,8 @@ angular.module('BitGo.Enterprise.EnterpriseApprovalTileDirective', [])
               break;
             case 'transactionRequest':
             case 'userChangeRequest':
+            case 'updateEnterpriseRequest':
+            case 'invitation':
               template = 'enterprise/templates/approvaltiles/' + approvalItemType + '.html';
               break;
             default:

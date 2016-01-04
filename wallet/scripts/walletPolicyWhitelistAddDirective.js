@@ -8,8 +8,8 @@
  */
 angular.module('BitGo.Wallet.WalletPolicyWhitelistAddDirective', [])
 
-.directive('walletPolicyWhitelistAdd', ['$rootScope', 'NotifyService', 'PolicyAPI', 'LabelsAPI', 'WalletsAPI', 'WalletModel',
-  function($rootScope, NotifyService, PolicyAPI, LabelsAPI, WalletsAPI, WalletModel) {
+.directive('walletPolicyWhitelistAdd', ['$rootScope', 'NotifyService', 'PolicyAPI', 'LabelsAPI', 'WalletsAPI', 'WalletModel', 'SDK',
+  function($rootScope, NotifyService, PolicyAPI, LabelsAPI, WalletsAPI, WalletModel, SDK) {
     return {
       restrict: 'A',
       require: '^?walletPolicyWhitelistManager',
@@ -18,7 +18,7 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistAddDirective', [])
         $scope.newAddress = null;
 
         function formIsValid() {
-          if (!Bitcoin.Address.validate($scope.newAddress.address)) {
+          if (!$scope.newAddress.address || !SDK.get().verifyAddress({address: $scope.newAddress.address})) {
             $scope.setFormError('Please enter a valid bitcoin address.');
             return false;
           }
@@ -57,6 +57,7 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistAddDirective', [])
             bitcoinAddress: $rootScope.wallets.current.data.id,
             rule: {
               id: $scope.policy.id,
+              type: 'bitcoinAddressWhitelist',
               condition: {
                 add: $scope.newAddress.address
               },

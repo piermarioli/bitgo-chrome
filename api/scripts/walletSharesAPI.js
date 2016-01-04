@@ -7,12 +7,8 @@
  */
 angular.module('BitGo.API.WalletSharesAPI', [])
 
-.factory('WalletSharesAPI', ['$q', '$location', '$resource', '$rootScope', 'WalletModel', 'NotifyService', 'UtilityService', 'CacheService', 'LabelsAPI', 'UserAPI',
-  function($q, $location, $resource, $rootScope, WalletModel, Notify, UtilityService, CacheService, LabelsAPI, UserAPI) {
-    // $http fetch helpers
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+.factory('WalletSharesAPI', ['$location', '$rootScope', 'WalletModel', 'NotifyService', 'CacheService', 'LabelsAPI', 'UserAPI', 'SDK',
+  function($location, $rootScope, WalletModel, Notify, CacheService, LabelsAPI, UserAPI, SDK) {
 
     // local copy of all wallet shares that exist for a given user
     var allWalletShares;
@@ -125,23 +121,22 @@ angular.module('BitGo.API.WalletSharesAPI', [])
      * @public
      */
     function getAllSharedWallets() {
-      var resource = $resource(kApiServer + '/walletshare', {});
-      return resource.get({}).$promise.then(
-        function(data){
-          // Reset the local and rootscope wallet share list
-          initEmptyWallets();
-          // set incoming wallet shares on allWalletShares list
-          data.incoming.forEach(function(incomingWalletShare){
-            allWalletShares.incoming[incomingWalletShare.id] = incomingWalletShare;
-          });
-          // set outgoing wallet shares on allWalletShares list
-          data.outgoing.forEach(function(outgoingWalletShare){
-            allWalletShares.outgoing[outgoingWalletShare.id] = outgoingWalletShare;
-          });
-          setFilteredWalletShares();
-        },
-        PromiseErrorHelper()
-      );
+      return SDK.wrap(
+        SDK.get().wallets().listShares()
+      )
+      .then(function(data){
+        // Reset the local and rootscope wallet share list
+        initEmptyWallets();
+        // set incoming wallet shares on allWalletShares list
+        data.incoming.forEach(function(incomingWalletShare){
+          allWalletShares.incoming[incomingWalletShare.id] = incomingWalletShare;
+        });
+        // set outgoing wallet shares on allWalletShares list
+        data.outgoing.forEach(function(outgoingWalletShare){
+          allWalletShares.outgoing[outgoingWalletShare.id] = outgoingWalletShare;
+        });
+        setFilteredWalletShares();
+      });
     }
 
     /**
@@ -151,16 +146,13 @@ angular.module('BitGo.API.WalletSharesAPI', [])
      * @returns {promise} - with data regarding the wallet share from the server
      * @public
      */
+    /* istanbul ignore next */
     function getSharedWallet(params) {
-      if (!params.shareId) {
+      if (!params.walletShareId) {
         throw new Error('Invalid data when getting a wallet share');
       }
-      var resource = $resource(kApiServer + '/walletshare/' + params.shareId);
-      return resource.get({}).$promise
-      .then(
-        function(wallet) {
-          return wallet;
-        }
+      return SDK.wrap(
+        SDK.get().wallets().getShare(params)
       );
     }
 
@@ -170,15 +162,14 @@ angular.module('BitGo.API.WalletSharesAPI', [])
      * @param {object} params containing details of both users and keychain info for shared wallet
      * @returns {object} promise with data for the shared wallet
      */
+    /* istanbul ignore next */
     function createShare(walletId, params) {
       if (!walletId || !params) {
         throw new Error('Invalid data when creating a wallet share');
       }
-      var resource = $resource(kApiServer + '/wallet/' + walletId + '/share', {});
-      return new resource(params).$save({})
-      .then(
-        PromiseSuccessHelper(),
-        PromiseErrorHelper()
+      return SDK.wrap(
+        SDK.get().newWalletObject({ id: walletId })
+        .createShare(params)
       );
     }
 
@@ -189,15 +180,13 @@ angular.module('BitGo.API.WalletSharesAPI', [])
      * @param   {Object} params    params (none)
      * @returns {Promise}
      */
+    /* istanbul ignore next */
     function requestReshare(walletId, params) {
       if (!walletId || !params) {
         throw new Error('Invalid data when requesting a reshare');
       }
-      var resource = $resource(kApiServer + '/wallet/' + walletId + '/requestreshare', {});
-      return new resource(params).$save({})
-      .then(
-        PromiseSuccessHelper(),
-        PromiseErrorHelper()
+      return SDK.wrap(
+        SDK.doPost('/wallet/' + walletId + '/requestreshare', params)
       );
     }
 
@@ -206,15 +195,10 @@ angular.module('BitGo.API.WalletSharesAPI', [])
      * @param {object} params with data containing id and state(rejected or accepted)
      * @returns {object} promise with data from the updated share
      */
+    /* istanbul ignore next */
     function updateShare(params) {
-      if (!params){
-        throw new Error('Invalid data when updating share');
-      }
-      var resource = $resource(kApiServer + '/walletshare/' + params.shareId, {});
-      return new resource(params).$save({})
-      .then(
-        PromiseSuccessHelper(),
-        PromiseErrorHelper()
+      return SDK.wrap(
+        SDK.get().wallets().updateShare(params)
       );
     }
 
@@ -223,15 +207,10 @@ angular.module('BitGo.API.WalletSharesAPI', [])
      * @param {object} params with data containing id and state(rejected or accepted)
      * @returns {object} promise with data from the updated share
      */
+    /* istanbul ignore next */
     function cancelShare(params) {
-      if (!params){
-        throw new Error('Invalid data when cancelling wallet share');
-      }
-      var resource = $resource(kApiServer + '/walletshare/' + params.shareId, {});
-      return new resource(params).$remove({})
-      .then(
-        PromiseSuccessHelper(),
-        PromiseErrorHelper()
+      return SDK.wrap(
+        SDK.get().wallets().cancelShare(params)
       );
     }
 
@@ -243,15 +222,13 @@ angular.module('BitGo.API.WalletSharesAPI', [])
      * @param {object} params with data containing id
      * @returns {object} promise with object saying whether the share was resent
      */
+    /* istanbul ignore next */
     function resendEmail(params) {
-      if (!params){
+      if (!params.walletShareId){
         throw new Error('Invalid data when resending wallet share');
       }
-      var resource = $resource(kApiServer + '/walletshare/' + params.shareId + '/resendemail', {});
-      return new resource(params).$save({})
-      .then(
-        PromiseSuccessHelper(),
-        PromiseErrorHelper()
+      return SDK.wrap(
+        SDK.doPost('/walletshare/' + params.walletShareId + '/resendemail', params)
       );
     }
 

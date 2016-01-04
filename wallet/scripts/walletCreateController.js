@@ -8,7 +8,7 @@ angular.module('BitGo.Wallet.WalletCreateController', [])
 .controller('WalletCreateController', ['$scope', '$rootScope', '$location', 'AnalyticsProxy',
   function($scope, $rootScope, $location, AnalyticsProxy) {
     // view states for the user settings area
-    $scope.viewStates = ['label', 'backupkey', 'passcode', 'activate', 'insure'];
+    $scope.viewStates = ['label', 'backupkey', 'passcode', 'activate'];
     // the current view state
     $scope.state = null;
     // template source for the current view
@@ -22,7 +22,7 @@ angular.module('BitGo.Wallet.WalletCreateController', [])
     // Accessible by all scopes inheriting this controller
     $scope.cancel = function() {
       // track the cancel
-      AnalyticsProxy.track('CreateWalletCanceled');
+      AnalyticsProxy.track('CreateWalletCanceled', { invitation: !!$rootScope.invitation });
 
       // Note: this redirect will also wipe all of the state that's been built up
       $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/wallets');
@@ -46,9 +46,6 @@ angular.module('BitGo.Wallet.WalletCreateController', [])
           break;
         case 'activate':
           tpl = 'wallet/templates/wallet-create-partial-activate.html';
-          break;
-        case 'insure':
-          tpl = 'wallet/templates/wallet-create-partial-insure.html';
           break;
       }
       return tpl;

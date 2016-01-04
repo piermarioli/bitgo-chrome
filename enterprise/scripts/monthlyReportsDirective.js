@@ -55,7 +55,7 @@
           var reportStart = reportInfoObj.startTime;
           var reportParams = {
             walletAddress: wallet.data.id,
-            start: reportStart,
+            start: Number(reportStart),
             period: 'month',
             format: 'pdf'
           };

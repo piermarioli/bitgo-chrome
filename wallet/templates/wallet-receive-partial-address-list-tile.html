@@ -1,12 +1,12 @@
-<td colspan="2" class="u-pointer" ng-show="showState('initial') && userCanEdit(tileItem)" ng-click="toggleActiveTile(tileItem)">
+<td colspan="2" class="u-pointer u-wordBreak" ng-show="showState('initial') && userCanEdit(tileItem)" ng-click="toggleActiveTile(tileItem)">
   <a>{{ tileItem.label }}</a>
 </td>
 <!-- Do not allow viewers to modify labels -->
-<td colspan="2" ng-show="showState('initial') && !userCanEdit(tileItem)">
+<td colspan="2" ng-show="showState('initial') && !userCanEdit(tileItem)" class="u-wordBreak">
   <span>{{ tileItem.label }}</span>
 </td>
 
-<td colspan="2" ng-show="showState('initial')">
+<td colspan="2" ng-show="showState('initial')" class="u-wordBreak">
   <a class="icon icon--qrcode" ng-click="openModal(tileItem.address, tileItem.label)"></a>
   {{ tileItem.address }}
 </td>

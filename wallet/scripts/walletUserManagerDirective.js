@@ -6,8 +6,8 @@ angular.module('BitGo.Wallet.WalletUsersManagerDirective', [])
   - displaying all of the users on the wallet and their roles
   - adding a new user to a wallet
  */
-.directive('walletUsersManager', ['UtilityService', 'RequiredActionService', 'BG_DEV',
-  function(Util, RequiredActionService, BG_DEV) {
+.directive('walletUsersManager', ['UtilityService', 'RequiredActionService', 'BG_DEV', 'AnalyticsProxy',
+  function(Util, RequiredActionService, BG_DEV, AnalyticsProxy) {
     return {
       restrict: 'A',
       require: '^WalletController',
@@ -61,7 +61,7 @@ angular.module('BitGo.Wallet.WalletUsersManagerDirective', [])
 
         function init() {
           $rootScope.setContext('walletUsers');
-
+          AnalyticsProxy.track('WalletUsersEntered');
           $scope.state = 'showAllUsers';
         }
         init();

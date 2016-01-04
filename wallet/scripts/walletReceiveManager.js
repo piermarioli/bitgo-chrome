@@ -8,8 +8,8 @@
  */
 angular.module('BitGo.Wallet.WalletReceiveManagerDirective', [])
 
-.directive('walletReceiveManager', ['$q', '$timeout', '$rootScope', 'NotifyService', 'CacheService', 'UtilityService', 'InfiniteScrollService', 'WalletsAPI', 'LabelsAPI', 'BG_DEV',
-  function($q, $timeout, $rootScope, NotifyService, CacheService, UtilityService, InfiniteScrollService, WalletsAPI, LabelsAPI, BG_DEV) {
+.directive('walletReceiveManager', ['$q', '$timeout', '$rootScope', 'NotifyService', 'CacheService', 'UtilityService', 'InfiniteScrollService', 'WalletsAPI', 'LabelsAPI', 'BG_DEV', 'AnalyticsProxy',
+  function($q, $timeout, $rootScope, NotifyService, CacheService, UtilityService, InfiniteScrollService, WalletsAPI, LabelsAPI, BG_DEV, AnalyticsProxy) {
     return {
       restrict: 'A',
       require: '^?WalletController',
@@ -51,7 +51,7 @@ angular.module('BitGo.Wallet.WalletReceiveManagerDirective', [])
          * @param {Bool} is the address the main/current receive address shown
          */
         $scope.decorateAddresses = function(params, isMainReceiveAddress) {
-          if (!params.index.toString()) {  // toString to account for 0 index
+          if (!params.index && params.index !== 0) {  // 0 index should be valid
             throw new Error('Invalid params');
           }
           var listItem;
@@ -210,10 +210,11 @@ angular.module('BitGo.Wallet.WalletReceiveManagerDirective', [])
 
         function init() {
           $rootScope.setContext('walletReceive');
-
+          AnalyticsProxy.track('WalletReceiveEntered');
           limit = 25;
           gettingAddresses = false;
           $scope.initAddressList();
+
           // Set the global inifinte scroll handler
           InfiniteScrollService.setScrollHandler($scope.getAddressesOnPageScroll);
         }

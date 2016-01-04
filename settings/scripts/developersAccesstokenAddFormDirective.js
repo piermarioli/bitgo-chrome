@@ -31,7 +31,7 @@ angular.module('BitGo.Settings.DevelopersAccesstokenAddFormDirective', [])
             { name: 'wallet_view_all', text: 'View', selected: true },
             { name: 'wallet_spend_all', text: 'Spend', selected: true },
             { name: 'wallet_manage_all', text: 'Manage Wallets', selected: true },
-            { name: 'wallet_create', text: 'Create Wallets', selected: false }
+            { name: 'wallet_create', text: 'Create Wallets', selected: true }
           ];
         }
 
@@ -70,10 +70,6 @@ angular.module('BitGo.Settings.DevelopersAccesstokenAddFormDirective', [])
           }
           if (!$scope.tokenParams.txValueLimit || !$scope.tokenParams.txValueLimit.toString()) {
             $scope.setFormError('New tokens must have a specified spending limit.');
-            return false;
-          }
-          if ($scope.tokenParams.txValueLimit > BG_DEV.TX.MAXIMUM_BTC_SPENDING_LIMIT) {
-            $scope.setFormError('Spending limit is too large to use.');
             return false;
           }
           if (!$scope.tokenParams.duration) {

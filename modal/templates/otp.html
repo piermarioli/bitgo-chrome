@@ -9,10 +9,10 @@
 
     <div class="formRow" ng-class="{ 'formRow--error': otpError }">
       <div class="inputText">
-        <input type="text" name="otp" class="inputText-input" placeholder="Enter code" ng-model="form.otp" bg-focus-when="true" bg-input-numbers-only max-length="7" />
+        <input type="text" name="otp" class="inputText-input" placeholder="Enter code" ng-model="form.otp" bg-focus-when="true" max-length="44" />
       </div>
     </div>
-    <a class="u-typography-4 u-pullRight" ng-click="resendOTP()">Resend</a>
+    <a class="u-typography-4 u-pullRight" ng-show="user.isAuthyUser()" ng-click="resendOTP()">Resend</a>
 
     <button type="submit" class="button" name="submitOTP" ng-click="submitOTP()">Submit</button>
     <a class="u-colorGreyDark u-typography-4" ng-click="closeWithError('cancel')">Cancel</a>

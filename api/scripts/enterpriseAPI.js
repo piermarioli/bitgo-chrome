@@ -4,13 +4,9 @@ angular.module('BitGo.API.EnterpriseAPI', [])
   - This module is for managing all http requests and local caching/state
   for all Enterprise objects in the app
 */
-.factory('EnterpriseAPI', ['$q', '$location', '$resource', '$rootScope', 'UtilityService', 'CacheService', 'EnterpriseModel', 'NotifyService',
-  function($q, $location, $resource, $rootScope, UtilityService, CacheService, EnterpriseModel, NotifyService) {
+.factory('EnterpriseAPI', ['$location', '$rootScope', 'UtilityService', 'CacheService', 'EnterpriseModel', 'NotifyService', 'SDK',
+  function($location, $rootScope, UtilityService, CacheService, EnterpriseModel, NotifyService, SDK) {
     var DEFAULT_CACHED_ENTERPRISE_ID = 'personal';
-
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
 
     // Cache setup
     var enterpriseCache = new CacheService.Cache('localStorage', 'Enterprises', 120 * 60 * 1000);
@@ -93,40 +89,40 @@ angular.module('BitGo.API.EnterpriseAPI', [])
 
     // Fetch all enterprises for the user
     function getAllEnterprises() {
-      var resource = $resource(kApiServer + '/enterprise', {});
-      return resource.get({}).$promise
-      .then(
-        function(data) {
-          // Array of enterprises returned
-          var enterprises = data.enterprises;
-          // Reset the rootScope enterprise list
-          $rootScope.enterprises.all = {};
+      return SDK.wrap(
+        SDK.doGet('/enterprise', {}, 'enterprises')
+      )
+      .then(function(enterprises) {
+        // Reset the rootScope enterprise list
+        $rootScope.enterprises.all = {};
 
-          // Create all 'real' enterprise objects
-          _.forEach(enterprises, function(enterpriseData) {
-            enterprise = new EnterpriseModel.Enterprise(enterpriseData);
-            $rootScope.enterprises.all[enterprise.id] = enterprise;
-            enterpriseCache.add(enterprise.name, enterprise);
-          });
+        // Create all 'real' enterprise objects
+        _.forEach(enterprises, function(enterpriseData) {
+          enterprise = new EnterpriseModel.Enterprise(enterpriseData);
+          $rootScope.enterprises.all[enterprise.id] = enterprise;
+          enterpriseCache.add(enterprise.name, enterprise);
+        });
 
-          // Create the 'personal' enterprise object
-          var personalEnterprise = new EnterpriseModel.Enterprise();
-          $rootScope.enterprises.all[personalEnterprise.id] = personalEnterprise;
-          enterpriseCache.add(personalEnterprise.name, personalEnterprise);
+        // Create the 'personal' enterprise object
+        var personalEnterprise = new EnterpriseModel.Enterprise();
+        $rootScope.enterprises.all[personalEnterprise.id] = personalEnterprise;
+        enterpriseCache.add(personalEnterprise.name, personalEnterprise);
 
-          // If an enterprise is set in the url use it; otherwise default to personal
-          var curEnterpriseId = getCurrentEnterprise();
-          _.forIn($rootScope.enterprises.all, function(enterprise) {
-            if (enterprise.id === curEnterpriseId) {
-              $rootScope.enterprises.current = enterprise;
-            }
-          });
-          // Let listeners in the app know that the enterprise list was set
-          $rootScope.$emit('EnterpriseAPI.CurrentEnterpriseSet', { enterprises: $rootScope.enterprises });
-          return enterprises;
-        },
-        PromiseErrorHelper()
-      );
+        // If an enterprise is set in the url use it; otherwise default to personal
+        var curEnterpriseId = getCurrentEnterprise();
+        _.forIn($rootScope.enterprises.all, function(enterprise) {
+          if (enterprise.id === curEnterpriseId) {
+            $rootScope.enterprises.current = enterprise;
+          }
+        });
+        //redirect to correct url incase url in enterprise is wrong. Do not redirect if 'enterprise is not present in url'
+        if (UtilityService.Url.getEnterpriseIdFromUrl() && (UtilityService.Url.getEnterpriseIdFromUrl() !== $rootScope.enterprises.current.id)) {
+          $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/' + UtilityService.Url.getEnterpriseSectionFromUrl());
+        }
+        // Let listeners in the app know that the enterprise list was set
+        $rootScope.$emit('EnterpriseAPI.CurrentEnterpriseSet', { enterprises: $rootScope.enterprises });
+        return enterprises;
+      });
     }
 
     /**
@@ -134,15 +130,28 @@ angular.module('BitGo.API.EnterpriseAPI', [])
     * @param inquiry {Object} contains necessary params for the post
     * @private
     */
+    /* istanbul ignore next */
     function createInquiry(inquiry) {
       if (!inquiry) {
         throw new Error('invalid params');
       }
-      var resource = $resource(kApiServer + '/enterprise/inquiry', {});
-      return new resource.save(inquiry).$promise
-      .then(
-        PromiseSuccessHelper(),
-        PromiseErrorHelper()
+      return SDK.wrap(
+        SDK.doPost('/enterprise/inquiry', inquiry)
+      );
+    }
+
+    /**
+    * Creates an enterprise
+    * @param params {Object} contains necessary stripe and enterprise data for creating an enterise
+    * @public
+    */
+    /* istanbul ignore next */
+    function addEnterprise(params) {
+      if (!params || !params.name || !params.supportPlan || !params.token) {
+        throw new Error('invalid params to add an enterprise');
+      }
+      return SDK.wrap(
+        SDK.doPost('/enterprise', params)
       );
     }
 
@@ -187,15 +196,120 @@ angular.module('BitGo.API.EnterpriseAPI', [])
     * @private
     * @returns { Promise }
     */
+    /* istanbul ignore next */
     function getInfoByName(enterprise) {
       if (!enterprise) {
         throw new Error('missing enterprise');
       }
-      var resource = $resource(kApiServer + '/enterprise/name/' + enterprise, {});
-      return new resource.get({}).$promise
-      .then(
-        PromiseSuccessHelper(),
-        PromiseErrorHelper()
+      return SDK.wrap(
+        SDK.doGet('/enterprise/name/' + enterprise)
+      );
+    }
+
+    /**
+    * Returns latest service version
+    * @public
+    * @returns { Promise }
+    */
+    /* istanbul ignore next */
+    function getServicesAgreementVersion() {
+      return SDK.wrap(
+        SDK.doGet('/servicesAgreement')
+      );
+    }
+
+    /**
+    * Updates an array of enterprises to the latest service agreement
+    * @public
+    * @param { enterpriseIds: [array of enterprise ids] } - object
+    * @returns { Promise }
+    */
+    /* istanbul ignore next */
+    function updateServicesAgreementVersion(params) {
+      if (!params || !params.enterpriseIds) {
+        throw new Error('Expected different parameters for updateServicesAgreementVersion');
+      }
+      return SDK.wrap(
+        SDK.doPut('/enterprise/servicesAgreement', params)
+      );
+    }
+
+    /**
+    * Gets users on a particular enterprise
+    * @public
+    * @param { enterpriseId: enterprise id to get the users for } - object
+    * @returns { Promise }
+    */
+    /* istanbul ignore next */
+    function getEnterpriseUsers(params) {
+      if (!params || !params.enterpriseId) {
+        throw new Error('Expected different parameters for getEnterpriseUsers');
+      }
+      return SDK.wrap(
+        SDK.doGet('/enterprise/' + params.enterpriseId + '/user', params)
+      );
+    }
+
+    /**
+    * Add admin to a particular enterprise
+    * @public
+    * @param { 
+        enterpriseId: enterprise id to get the users for
+        username: username of the user to be added
+      } 
+    * @returns { Promise }
+    */
+    /* istanbul ignore next */
+    function addEnterpriseAdmin(params) {
+      if (!params || !params.enterpriseId || !params.username) {
+        throw new Error('Expected different parameters for addEnterpriseAdmin');
+      }
+      return SDK.wrap(
+        SDK.doPost('/enterprise/' + params.enterpriseId + '/user', {username: params.username})
+      );
+    }
+
+    /**
+    * Update billing for a particular enterprise
+    * @public
+    * @param { 
+        enterpriseId: enterprise id to change the billing for
+        cardToken: 
+        userPlan:
+        supportPlan:
+      }
+    * Call needs to have atleast on of cardToken, userPlan, supportPlan values
+    * @returns { Promise }
+    */
+    /* istanbul ignore next */
+    function updateEnterpriseBilling(params) {
+      if (!params || !params.enterpriseId) {
+        throw new Error('Expected different parameters for addEnterpriseAdmin');
+      }
+      if (!params.cardToken && !params.userPlan && !params.supportPlan) {
+        throw new Error('Expected different parameters for addEnterpriseAdmin');
+      }
+      return SDK.wrap(
+        SDK.doPut('/enterprise/' + params.enterpriseId + '/billing', params)
+      );
+    }
+
+    /**
+    * Remove admin from a particular enterprise
+    * @public
+    * @param { 
+        enterpriseId: enterprise id to get the users for
+        username: username of the user to be removed
+      } 
+    * @returns { Promise }
+    */
+    /* istanbul ignore next */
+    function removeEnterpriseAdmin(params) {
+      if (!params || !params.enterpriseId || !params.username) {
+        throw new Error('Expected different parameters for addEnterpriseAdmin');
+      }
+      return SDK.wrap(
+        SDK.doDelete('/enterprise/' + params.enterpriseId + '/user', {username: params.username})
       );
     }
 
@@ -239,10 +353,17 @@ angular.module('BitGo.API.EnterpriseAPI', [])
     // In-client API
     return {
       getInfoByName: getInfoByName,
+      getServicesAgreementVersion: getServicesAgreementVersion,
+      updateServicesAgreementVersion: updateServicesAgreementVersion,
+      getEnterpriseUsers: getEnterpriseUsers,
+      addEnterpriseAdmin: addEnterpriseAdmin,
+      updateEnterpriseBilling: updateEnterpriseBilling,
+      removeEnterpriseAdmin: removeEnterpriseAdmin,
       getAllEnterprises: getAllEnterprises,
       setCurrentEnterprise: setCurrentEnterprise,
       getCurrentEnterprise: getCurrentEnterprise,
-      createInquiry: createInquiry
+      createInquiry: createInquiry,
+      addEnterprise: addEnterprise
     };
   }
 ]);

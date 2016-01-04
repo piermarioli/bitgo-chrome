@@ -18,7 +18,9 @@ angular.module('BitGo.Enterprise.ActivityApprovalsDirective', [])
         $scope.noApprovalsExist = null;
 
         function displayUI () {
-          if (!_.isEmpty($rootScope.enterprises.current.pendingApprovals)) {
+          if ($rootScope.enterprises &&
+            $rootScope.enterprises.current &&
+            !_.isEmpty($rootScope.enterprises.current.pendingApprovals)) {
             $scope.enterpriseApprovalsExist = true;
             $scope.noApprovalsExist = false;
           } else {

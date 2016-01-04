@@ -12,8 +12,9 @@ angular.module('BitGo.Models.UserModel', [])
         currency: BG_DEV.CURRENCY.DEFAULTS.CURRENCY,
         bitcoinUnit: BG_DEV.CURRENCY.DEFAULTS.BITCOIN_UNIT,
       },
-      email: { email: '', verified: false},
-      phone: { phone: '', verified: false }
+      email: { email: '', verified: false },
+      phone: { phone: '', verified: false },
+      otpDevices: []
     };
 
     /**
@@ -69,9 +70,6 @@ angular.module('BitGo.Models.UserModel', [])
     * @public
     */
     User.prototype.isGrandfathered = function() {
-      if (this.isEnterpriseCustomer()) {
-        return false;
-      }
       return this.plan.name === BG_DEV.USER.ACCOUNT_LEVELS.grandfathered.name;
     };
 
@@ -82,9 +80,6 @@ angular.module('BitGo.Models.UserModel', [])
     * @public
     */
     User.prototype.isBasic = function() {
-      if (this.isEnterpriseCustomer()) {
-        return false;
-      }
       return this.plan.name === BG_DEV.USER.ACCOUNT_LEVELS.basic.name;
     };
 
@@ -95,9 +90,6 @@ angular.module('BitGo.Models.UserModel', [])
     * @public
     */
     User.prototype.isPlus = function() {
-      if (this.isEnterpriseCustomer()) {
-        return false;
-      }
       return this.plan.name === BG_DEV.USER.ACCOUNT_LEVELS.plusMonthly.name;
     };
 
@@ -108,7 +100,36 @@ angular.module('BitGo.Models.UserModel', [])
     * @public
     */
     User.prototype.isPro = function() {
-      return (this.plan.name === BG_DEV.USER.ACCOUNT_LEVELS.proMonthly.name) || this.isEnterpriseCustomer();
+      return this.plan.name === BG_DEV.USER.ACCOUNT_LEVELS.proMonthly.name;
+    };
+
+    /**
+     *  Check if the user has an Authy device
+     *  @returns { bool }
+     *  @public
+     */
+    User.prototype.isAuthyUser = function() {
+      if (this.settings.otpDevices.length > 0) {
+
+        var index = _.findIndex(this.settings.otpDevices, { 'type': 'authy' });
+        return ( index > -1 );
+      }
+    };
+
+    /**
+    * Get the users phone
+    *
+    * @public
+    */
+    User.prototype.getPhone = function() {
+      var otpDevices = this.settings.otpDevices;
+      if (!this.isAuthyUser()) {
+        return false;
+      }
+      var index = function() {
+        return _.findIndex(otpDevices, { 'type': 'authy' });
+      };
+      return this.settings.otpDevices[index()].phone;
     };
 
     /**
@@ -122,16 +143,6 @@ angular.module('BitGo.Models.UserModel', [])
         return true;
       }
       return false;
-    };
-
-    /**
-    * Check if the user's phone is verified
-    *
-    * @returns { Bool }
-    * @public
-    */
-    User.prototype.phoneNotVerified = function() {
-      return !this.settings.phone.verified;
     };
 
     /**
@@ -158,6 +169,20 @@ angular.module('BitGo.Models.UserModel', [])
     };
 
     /**
+    * Check if user has a credit card on file
+    *
+    * @returns { Bool }
+    * @public
+    */
+    User.prototype.hasPaymentOnFile = function() {
+      return  this.settings.stripe &&
+              this.settings.stripe.customer &&
+              this.settings.stripe.customer.data &&
+              this.settings.stripe.customer.data.sources &&
+              this.settings.stripe.customer.data.sources.data.length > 0;
+    };
+
+    /**
     * Check if the user has access to use the app, or if they need to upgrade
     *
     * @returns { Bool }
@@ -166,9 +191,6 @@ angular.module('BitGo.Models.UserModel', [])
     User.prototype.checkAccess = function() {
       // ensure they have a verified email first
       if (this.emailNotSet() || this.emailNotVerified()) {
-        return false;
-      }
-      if (this.phoneNotSet() || this.phoneNotVerified()) {
         return false;
       }
       return true;

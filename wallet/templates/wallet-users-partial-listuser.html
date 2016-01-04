@@ -21,7 +21,7 @@
       <tr ng-repeat="walletUserEntry in wallets.current.data.admin.users">
         <td class="userTable-user" bg-get-user user-id="{{ walletUserEntry.user }}">
           <b>{{ user.settings.email.email }}</b>
-          <div ng-show="walletUserEntry.needsRecovery"><a bg-add-user-to-wallet ng-click="reshareWallet(walletUserEntry, user)">Re-invite</a></div>
+          <div ng-show="walletUserEntry.needsRecovery && walletUserEntry.user !== currentUser.settings.id"><a bg-add-user-to-wallet ng-click="reshareWallet(walletUserEntry, user)">Re-invite</a></div>
         </td>
         <td class="userTable-role">
           <span>
@@ -45,7 +45,7 @@
         </td>
         <td class="userTable-role">
           <span>
-                  {{ walletShare.permissions | bgPermissionsRoleConversionFilter }}
+            {{ walletShare.permissions | bgPermissionsRoleConversionFilter }}
           </span>
         </td>
         <td class="table-action">

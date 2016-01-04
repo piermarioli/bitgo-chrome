@@ -7,8 +7,8 @@
  */
 angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', [])
 
-.directive('walletCreateStepsPasscode', ['$q', '$rootScope', 'UtilityService', 'NotifyService', 'KeychainsAPI', 'UserAPI', '$timeout', 'BG_DEV', 'AnalyticsProxy', 'AnalyticsUtilities',
-  function($q, $rootScope, Utils, Notify, KeychainsAPI, UserAPI, $timeout, BG_DEV, AnalyticsProxy, AnalyticsUtilities) {
+.directive('walletCreateStepsPasscode', ['$q', '$rootScope', 'NotifyService', 'KeychainsAPI', 'UserAPI', '$timeout', 'BG_DEV', 'AnalyticsProxy', 'AnalyticsUtilities', 'SDK',
+  function($q, $rootScope, Notify, KeychainsAPI, UserAPI, $timeout, BG_DEV, AnalyticsProxy, AnalyticsUtilities, SDK) {
     // valid password type options
     var VALID_PW_OPTIONS = { newWalletPw: true, loginPw: true };
 
@@ -77,13 +77,7 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', [])
          * @private
          */
         function loginPasswordFormCheck() {
-          var key = $rootScope.currentUser.settings.email.email;
-          var passcode = $scope.inputs.passcode || '';
-          // We MAC the password with the user's email before verifying
-          var params = {
-            password: Utils.Crypto.sjclHmac(key, passcode)
-          };
-          return UserAPI.verifyPassword(params);
+          return UserAPI.verifyPassword({ password: $scope.inputs.passcode || '' });
         }
 
         /**
@@ -95,11 +89,11 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', [])
           $scope.updateProgress(1);
 
           try {
-            $scope.generated.passcodeEncryptionCode = Utils.Crypto.generateRandomPassword(10);
+            $scope.generated.passcodeEncryptionCode = SDK.generateRandomPassword();
           } catch (e) {
             return $q.reject({ error: 'BitGo needs to gather more entropy for encryption. Please refresh your page and try this again.'});
           }
-          $scope.generated.encryptedWalletPasscode = sjcl.encrypt($scope.generated.passcodeEncryptionCode, $scope.inputs.passcode);
+          $scope.generated.encryptedWalletPasscode = SDK.encrypt($scope.generated.passcodeEncryptionCode, $scope.inputs.passcode);
           // Let the user see the heavy lifting that we're doing while creating the wallet.
           return $q.when(function() {
             $timeout(function() {
@@ -140,17 +134,28 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', [])
         function createBackupKeychain(callback) {
           // Update the UI progress bar
           $scope.updateProgress(3);
-          var params = {
-            source: 'user',
-            passcode: $scope.inputs.passcode
+
+          // always return a promise
+          var callCreateBackupAPIs = function() {
+            // simply call the create backup route if a krs was selected
+            if ($scope.inputs.backupKeyProvider) {
+              return KeychainsAPI.createBackupKeychain($scope.inputs.backupKeyProvider);
+            }
+
+            var params = {
+              source: 'user',
+              passcode: $scope.inputs.passcode
+            };
+            // check if the user provided their own backup key
+            if ($scope.generated.backupKeychain) {
+              params.source = 'cold';
+              params.hdNode = $scope.generated.backupKeychain;
+            }
+            // Return a promise
+            return KeychainsAPI.createKeychain(params);
           };
-          // check if the user provided their own backup key
-          if ($scope.generated.backupKeychain) {
-            params.source = 'cold';
-            params.extendedKey = $scope.generated.backupKeychain;
-          }
-          // Return a promise
-          return KeychainsAPI.createKeychain(params)
+
+          return callCreateBackupAPIs()
           .then(function(keychain) {
             // advance the UI with CSS
             $scope.generated.walletBackupKeychain = keychain;
@@ -207,7 +212,8 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', [])
 
             // track the successful keychain creations/advancement
             metricsData = {
-              option: $scope.option
+              option: $scope.option,
+              invitation: !!$rootScope.invitation
             };
             AnalyticsProxy.track('SetWalletPasscode', metricsData);
 
@@ -294,7 +300,7 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', [])
           $scope.creatingWallet = false;
 
           // use the login password by default
-          $scope.option = 'newWalletPw';
+          $scope.option = 'loginPw';
         }
         init();
       }],
@@ -339,7 +345,8 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', [])
 
           // Track the password option selected
           var metricsData = {
-            option: option
+            option: option,
+            invitation: !!$rootScope.invitation
           };
           AnalyticsProxy.track('SelectWalletPasscodeOption', metricsData);
         };

@@ -4,8 +4,8 @@
  */
 angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', [])
 
-.directive('walletCreateStepsBackupkey', ['$rootScope', 'UtilityService', 'NotifyService', 'AnalyticsProxy',
-  function($rootScope, Utils, NotifyService, AnalyticsProxy) {
+.directive('walletCreateStepsBackupkey', ['$rootScope', '$timeout', 'BG_DEV', 'UtilityService', 'KeychainsAPI', 'NotifyService', 'AnalyticsProxy', 'SDK', 'featureFlags',
+  function($rootScope, $timeout, BG_DEV, Utils, KeychainsAPI, NotifyService, AnalyticsProxy, SDK, featureFlags) {
     return {
       restrict: 'A',
       controller: ['$scope', function($scope) {
@@ -17,6 +17,10 @@ angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', [])
           },
           userProvided: {
             userProvided: true,
+            enabled: true
+          },
+          krsProvided: {
+            krsProvided: true,
             enabled: true
           },
           coldKeyApp: {
@@ -37,8 +41,12 @@ angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', [])
             case 'userProvided':
               isValid = $scope.userXpubValid();
               break;
-            // case 'coldKeyApp':
-            //   break;
+            case 'coldKeyApp':
+              isValid = $scope.userXpubValid();
+              break;
+            case 'krsProvided':
+              isValid = true;
+              break;
           }
           return isValid;
         }
@@ -52,14 +60,14 @@ angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', [])
           // Clear generated keychain info
           $scope.generated.backupKeychain = null;
           $scope.generated.backupKey = null;
+          // Clear selected backup key provider
+          $scope.inputs.backupKeyProvider = null;
         }
 
         // Attempts to generate a backup key from a user's provided xpub
         function generateBackupKeyFromXpub() {
           try {
-            $scope.generated.backupKeychain = new Bitcoin.BIP32($scope.inputs.backupPubKey);
-            var key = $scope.generated.backupKeychain.eckey;
-            $scope.generated.backupKey = key;
+            $scope.generated.backupKeychain = SDK.bitcoin.HDNode.fromBase58($scope.inputs.backupPubKey);
           } catch(error) {
             return false;
           }
@@ -96,14 +104,69 @@ angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', [])
 
           // Track the creation option selected
           var metricsData = {
-            option: option
+            option: option,
+            invitation: !!$rootScope.invitation
           };
           AnalyticsProxy.track('SelectBackupKeyOption', metricsData);
 
+          // prevent timeout from endless api calling
+          $scope.waitingForColdKey = false;
           // If the user chooses another backup key creation option,
           // clear the form data from the other (unselected) options
-          if (option === 'inBrowser') {
-            clearBackupKeyInputs();
+          clearBackupKeyInputs();
+          // scroll to bottom
+          $('html body').animate({
+            scrollTop: $(document).height()
+          });
+          if (option === 'krsProvided') {
+            $scope.inputs.backupKeyProvider = $scope.backupKeyProviders[0].id;
+          } else if (option === 'coldKeyApp') {
+            // set up the variables for the passcodeStep
+            $scope.inputs.backupKeySource = null;
+
+            // set up qr code for coldkey app
+            var coldKeySecret = 'ckid' + SDK.generateRandomPassword();
+            var coldKeyQRCode = {
+              v: 1, // version
+              e: SDK.get().env || 'dev', // environment
+              s: coldKeySecret
+            };
+            $scope.inputs.coldKeySecret = coldKeySecret;
+            $scope.inputs.coldKeyQRCode = JSON.stringify(coldKeyQRCode);
+
+            // We start polling in the background to check for a cold key
+            $scope.waitingForColdKey = true;
+
+            var currentStep = $scope.currentStep;
+            var scheduleColdKeyCheck = function () {
+              var kPollInterval = 2 * 1000;
+
+              if (!$scope.waitingForColdKey) {
+                return; // done!
+              }
+              $timeout(function () {
+                KeychainsAPI.getColdKey($scope.inputs.coldKeySecret)
+                  .then(function (response) {
+                    if (response.xpub) {
+                      $scope.waitingForColdKey = false;
+                      $scope.inputs.coldKey = $scope.inputs.backupPubKey = response.xpub;
+                      if ($scope.userXpubValid()) {
+                        $('html body').animate({
+                          scrollTop: $(document).height()
+                        });
+                      }
+                    }
+                  })
+                  .catch(function (error) {
+                    if (error.status === 404) {
+                      scheduleColdKeyCheck();
+                    } else {
+                      NotifyService.errorHandler(error);
+                    }
+                  });
+              }, kPollInterval);
+            };
+            scheduleColdKeyCheck();
           }
         };
 
@@ -147,12 +210,13 @@ angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', [])
 
         // Event handlers
         var killXpubWatcher = $scope.$watch('inputs.backupPubKey', function(xpub) {
-          if (xpub && $scope.userXpubValid()) {
 
+          if (xpub && $scope.userXpubValid()) {
             // track the successful addition of a backup xpub
             AnalyticsProxy.track('ValidBackupXpubEntered');
-
-            disableOptions(['inBrowser', 'coldKeyApp']);
+            // enable only the selected option
+            disableOptions(_.keys(VALID_BACKUPKEY_OPTIONS));
+            _.find(VALID_BACKUPKEY_OPTIONS, $scope.option).enabled = true;
             $scope.inputs.useOwnBackupKey = true;
           }
         });
@@ -163,7 +227,21 @@ angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', [])
 
         // Initialize the controller
         function init() {
-          $scope.option = 'inBrowser';
+          if (featureFlags.isOn('krs')) {
+            $scope.backupKeyProviders = BG_DEV.BACKUP_KEYS.krsProviders;
+            $scope.inputs = $scope.inputs || {};
+            var backupKeyProvidersById = _.indexBy($scope.backupKeyProviders, 'id');
+            $scope.inputs.backupKeyProviderDisplayName = function () {
+              return backupKeyProvidersById[$scope.inputs.backupKeyProvider].displayName;
+            };
+            $scope.inputs.backupKeyProviderUrl = function () {
+              return backupKeyProvidersById[$scope.inputs.backupKeyProvider].url;
+            };
+            $scope.inputs.backupKeyProvider = $scope.backupKeyProviders[0].id;
+            $scope.option = 'krsProvided';
+          } else {
+            $scope.option = 'inBrowser';
+          }
         }
         init();
       }]

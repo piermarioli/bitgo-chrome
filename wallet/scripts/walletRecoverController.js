@@ -10,8 +10,8 @@
  */
 angular.module('BitGo.Wallet.WalletRecoverController', [])
 
-.controller('WalletRecoverController', ['$modal', '$rootScope', '$scope', 'UtilityService', 'BG_DEV', 'NotifyService', 'WalletsAPI', 'KeychainsAPI', 'WalletSharesAPI',
-  function($modal, $rootScope, $scope, UtilityService, BG_DEV, NotifyService, WalletsAPI, KeychainsAPI, WalletSharesAPI) {
+.controller('WalletRecoverController', ['$modal', '$rootScope', '$scope', 'UtilityService', 'SDK', 'BG_DEV', 'NotifyService', 'WalletsAPI', 'KeychainsAPI', 'WalletSharesAPI',
+  function($modal, $rootScope, $scope, UtilityService, SDK, BG_DEV, NotifyService, WalletsAPI, KeychainsAPI, WalletSharesAPI) {
     // valid password type options
     var RECOVERY_OPTIONS = { keycard: 'keycard', requestInvite: 'requestInvite' };
 
@@ -133,9 +133,9 @@ angular.module('BitGo.Wallet.WalletRecoverController', [])
      * @returns {String} user's decrypted private key || undefined
      * @private
      */
-    function decryptKeychain(encryptedXprv, passcode) {
+    function decryptKeychain(passcode, encryptedXprv) {
       try {
-        var privKey = UtilityService.Crypto.sjclDecrypt(passcode, encryptedXprv);
+        var privKey = SDK.decrypt(passcode, encryptedXprv);
         return privKey;
       } catch (e) {
         return;
@@ -164,15 +164,14 @@ angular.module('BitGo.Wallet.WalletRecoverController', [])
         // init a new bip32 object baced on the xprv provided
         var testBip32;
         try {
-          testBip32 = new Bitcoin.BIP32($scope.userInputRecoveryData.userXprv);
+          testBip32 = SDK.bitcoin.HDNode.fromBase58($scope.userInputRecoveryData.userXprv);
         } catch (e) {
           $scope.setFormError('Please enter a valid BIP32 master private key (xprv).');
           return;
         }
         var privateInfo = $rootScope.wallets.current.data.private;
         var userXpub = privateInfo.keychains[0].xpub;
-        var testXpub = testBip32.extended_public_key_string();
-
+        var testXpub = testBip32.neutered().toBase58();
         if (userXpub !== testXpub) {
           $scope.setFormError('Please enter a valid BIP32 master private key (xprv) for this wallet.');
           return;
@@ -203,7 +202,7 @@ angular.module('BitGo.Wallet.WalletRecoverController', [])
     $scope.recoverWithKeycardBoxD = function() {
       $scope.clearFormError();
       if (keycardBoxDFormValid()) {
-        var xprv = decryptKeychain($scope.walletRecoveryInfo.encryptedXprv, $scope.userInputRecoveryData.decryptedKeycardBoxD);
+        var xprv = decryptKeychain($scope.userInputRecoveryData.decryptedKeycardBoxD, $scope.walletRecoveryInfo.encryptedXprv);
         if (!xprv) {
           $scope.setFormError('Unable to decrypt with the JSON provided');
           return;
@@ -279,7 +278,7 @@ angular.module('BitGo.Wallet.WalletRecoverController', [])
         // Get the xpub for the xprv provided. It might not match with xpub on the wallet for legacy wallets
         var newBip32;
         try {
-          newBip32 = new Bitcoin.BIP32($scope.userInputRecoveryData.decryptedXprv);
+          newBip32 = SDK.bitcoin.HDNode.fromBase58($scope.userInputRecoveryData.decryptedXprv);
         } catch (e) {
           console.log(e.stack);
           NotifyService.error('There was an error with updating this keychain. Please refresh your page and try this again.');
@@ -287,8 +286,8 @@ angular.module('BitGo.Wallet.WalletRecoverController', [])
         }
         // encrypt the xprv with the user's new passcode
         var newKeychainData = {
-          encryptedXprv: UtilityService.Crypto.sjclEncrypt($scope.newPasscode, $scope.userInputRecoveryData.decryptedXprv),
-          xpub: newBip32.extended_public_key_string()
+          encryptedXprv: SDK.encrypt($scope.newPasscode, $scope.userInputRecoveryData.decryptedXprv),
+          xpub: newBip32.neutered().toBase58()
         };
         KeychainsAPI.update(newKeychainData)
         .then(function(newKeychain) {

@@ -16,7 +16,13 @@ angular.module('BitGo.Modals', [
   // User Deactivation Modal
   'BitGo.Modals.ModalAccountDeactivationDirective',
   // QR Receive Address
-  'BitGo.Modals.ModalQrReceiveAddressDirective'
+  'BitGo.Modals.ModalQrReceiveAddressDirective',
+  // Shapeshift receive address
+  'BitGo.Modals.ModalReceiveAltCoinDirective',
+  // Create Wallet
+  'BitGo.Modals.ModalCreateWallet',
+  // Fund Wallet
+  'BitGo.Modals.ModalFundWallet'
 ])
 
 .run(['$rootScope', '$compile', '$http', '$templateCache', 'CONSTANTS', 'ModalStateService',

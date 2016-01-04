@@ -1,3 +1,4 @@
+/* istanbul ignore next */
 angular.module('BitGo.Interceptors.BrowserInterceptor', [])
 
 .factory('BrowserInterceptor', ['$q', '$location',

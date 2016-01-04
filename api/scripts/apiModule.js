@@ -8,6 +8,7 @@ angular.module('BitGo.API', [
   'BitGo.API.ApprovalsAPI',
   'BitGo.API.AuditLogAPI',
   'BitGo.API.EnterpriseAPI',
+  'BitGo.API.IdentityAPI',
   'BitGo.API.KeychainsAPI',
   'BitGo.API.LabelsAPI',
   'BitGo.API.JobsAPI',
@@ -22,7 +23,12 @@ angular.module('BitGo.API', [
   'BitGo.API.UserAPI',
   'BitGo.API.WalletsAPI',
   'BitGo.API.WalletSharesAPI',
+  'BitGo.API.MatchwalletAPI',
+  'BitGo.API.ssAPI',
+
   // Dependencies for this module
   'BitGo.Model',
-  'BitGo.Utility'
+  'BitGo.Utility',
+  'feature-flags'
+  
 ]);

@@ -1,12 +1,13 @@
 <div class="mainContent contentWrapper">
-  <div class="row" bg-state-manager>
+  <div class="row" bg-state-manager two-factor-form>
     <div class="col col--centered">
 
       <div ng-show="showState('login')">
-        <p class="u-typography-4 u-pullRight u-pushDown35 u-colorBlueGreyDark">Need an account? <a href="{{ TemplatePathPrefix }}/signup">Sign Up</a></p>
 
-        <h1>Log In</h1>
-
+        <h1>
+          Log In
+          <span class="formHead-right-align">Need an account? <a href="{{ TemplatePathPrefix }}/signup">Sign Up</a></span>
+        </h1>
         <form novalidate name="loginForm" login-form>
 
           <bg-form-error></bg-form-error>
@@ -45,38 +46,48 @@
         <p class="u-typography-3">Please verify the email you registered with ({{ lockedEmail || (user && user.settings.email.email) }}).</p>
       </div>
 
-      <div ng-show="showState('setPhone')">
+      <div ng-show="showState('setOtpDevice')">
         <h1>Log In</h1>
 
-        <h2 class="u-typography-3 u-typography-medium u-noMargin">Secure Your Account With 2-Step Verification
-          <!-- <i class="icon icon--qmark u-colorGreyDark u-typography-5" popover-trigger="mouseenter" popover-placement="right" popover-template="auth/templates/twofactor-partial.html"></i> -->
-        </h2>
+        <h3 class="u-typography-3 u-typography-medium">Secure Your Account With 2-Step Verification</h3>
 
-        <p class="u-typography-3 u-colorGreyDark u-marginBottom40">BitGo requires 2-Step verification to protect your account.  2-Step Verification protects your account with your phone as well as your password.</p>
+        <p class="u-typography-3 u-colorGreyDark u-marginBottom40">BitGo encourages 2-Step verification to protect your account.  2-Step Verification protects your account with your phone as well as your password.</p>
 
-        <h3>1. Choose Your 2-Step Verification Method</h3>
+        <h3>Choose Your 2-Step Verification Method</h3>
 
-        <ul class="selector">
-          <li class="selector-item" ng-class="{ 'is-selected': isTwoFactorMethod('authy') }" ng-click="setTwoFactorMethod('authy')">
-            <h4 class="selector-heading">Authy App</h4>
+        <div class="selector">
+          <div class="col-xss-12 col-xs-6 col-sm-4 col-md-4 col-lg-4 col--noPadding">
+            <div class="selector-item" ng-class="{ 'is-selected': isTwoFactorMethod('totp') }" ng-click="setTwoFactorMethod('totp')">
+              <h4 class="selector-heading">Google Authenticator</h4>
 
-            <p>Receive 2-Step Verification codes in a secure, easy to use app on your phone.  Even works when your phone is offline.</p>
+              <p>Generate two-step verification codes using the Google Authenticator app. No phone number is required.</p>
 
-            <div class="selector-notice">Recommended</div>
-          </li>
-          <li class="selector-item" ng-class="{ 'is-selected': isTwoFactorMethod('text') }" ng-click="setTwoFactorMethod('text')">
-            <h4 class="selector-heading">Text Message</h4>
+              <div class="selector-notice">Recommended</div>
 
-            <p>Use SMS to deliver your 2-Step Verification codes to any SMS-enabled phone.</p>
+            </div>
+          </div>
+          <div class="col-xss-12 col-xs-6 col-sm-4 col-md-4 col-lg-4 col--noPadding">
+            <div class="selector-item" ng-class="{ 'is-selected': isTwoFactorMethod('text') }" ng-click="setTwoFactorMethod('text')">
+              <h4 class="selector-heading">Text Message</h4>
+              <p>Receive your two-step verification code as a text message to your phone.</p>
 
-            <div class="selector-notice"></div>
+              <div class="selector-notice"></div>
 
-          </li>
-        </ul>
+            </div>
+          </div>
+          <div class="col-xss-12 col-xs-6 col-sm-4 col-md-4 col-lg-4 col--noPadding">
+            <div class="selector-item" ng-class="{ 'is-selected': isTwoFactorMethod('authy') }" ng-click="setTwoFactorMethod('authy')">
+              <h4 class="selector-heading">Authy App</h4>
 
-        <div ng-show="isTwoFactorMethod('authy')">
-          <h3>2. Install Authy and set up an your account</h3>
+              <p>Use the Authy app on your phone or desktop, or receive two-step verification codes via text message. Verified phone number is required.</p>
 
+              <div class="selector-notice"></div>
+
+            </div>
+          </div>
+        </div>
+        <div class="u-clear u-clearfix col-sm-12 col-md-12 col-lg-12 col--noPadding" ng-show="isTwoFactorMethod('authy')">  
+          <h3 class="u-marginTop30 u-marginBottom0">Install and Launch the Authy App</h3>
           <ul class="u-cleanList u-inlineList u-marginBottom30">
             <li>
               <a href="https://itunes.apple.com/us/app/authy/id494168017" target="_blank">
@@ -90,77 +101,161 @@
             </li>
             <li>
               <a href="https://chrome.google.com/webstore/detail/authy/gaedmjdfmmahhbjefcbgaolhhanlaolb" target="_blank">
-                <img src="/img/new_bitgo/chromeapp.png" alt="Install Authy for your PC">
+                <img src="/img/new_bitgo/AuthyButton.png" alt="Get it on Desktop">
               </a>
             </li>
           </ul>
+        </div>
 
-          <h3>3. Enter the phone number used in the Authy app </h3>
+        <div class="u-clear u-clearfix col-sm-12 col-md-12 col-lg-12 col--noPadding" ng-show="isTwoFactorMethod('totp')">
+          <h3 class="u-marginTop30 u-marginBottom0">Install and Launch Google Authenticator</h3>
+
+          <ul class="u-cleanList u-inlineList u-marginBottom30">
+            <li>
+              <a href="https://itunes.apple.com/us/app/google-authenticator/id388497605" target="_blank">
+                <img src="/img/new_bitgo/appstore.png" alt="Available on the iPhone App Store">
+              </a>
+            </li>
+            <li>
+              <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank">
+                <img src="/img/new_bitgo/googleplay.png" alt="Get it on Google Play">
+              </a>
+            </li>
+          </ul>
+          <ul class="u-clear u-cleanList u-inlineList u-marginBottom30">
+            <li>
+              <button type="submit" class="button" name="newTotp" ng-click="newTotp()">Next</button>
+            </li>
+            <li>
+              <button class="button button--grey" class="button" ng-click="deferTwoFactor()">I'll Do It Later</button>
+            </li>
+          </ul>
+        </div>
+
+        <div ng-show="isTwoFactorMethod('authy')">
+          <h3>Mobile Phone Number</h3>
+        </div>
+
+        <div class="u-clear u-clearfix col-sm-12 col-md-12 col-lg-12 col--noPadding" ng-show="isTwoFactorMethod('text')">
+          <h3 class="u-marginTop30">Mobile Phone Number</h3>
         </div>
 
         <div ng-show="isTwoFactorMethod('text')">
-          <h3>2. Mobile Phone Number</h3>
-        </div>
+          <form novalidate name="setPhoneForm" set-phone-form>
 
-        <form novalidate name="setPhoneForm" set-phone-form>
+            <bg-form-error></bg-form-error>
 
-          <bg-form-error></bg-form-error>
-
-          <div class="formRow" ng-class="{ 'formRow--error': phoneError }">
-            <p class="notice" ng-show="phoneError">Invalid phone number</p>
-            <div class="inputText">
+            <div class="inputText col-xss-12 col-xs-10 col-sm-7 col-md-7 col-lg-7 col--noPadding">
               <bg-intl-tel-input name="phone" ng-model="user.settings.phone.phone" placeholder="Enter mobile phone number" bg-input-validator></bg-intl-tel-input>
             </div>
-          </div>
+            <ul class="u-clear u-cleanList u-inlineList u-marginBottom30">
+              <li>
+                <button type="submit" class="button" name="sendOTP" ng-click="sendOTP(true)">Next</button>
+              </li>
+              <li>
+                <button class="button button--grey" type="defer" class="button" ng-click="deferTwoFactor()">I'll Do It Later</button>
+              </li>
+            </ul>
+          </form>
+        </div>
 
-          <div class="buttons">
-            <button type="submit" class="button" name="submitSetPhone" ng-click="submitSetPhone()">Next</button>
-          </div>
-        </form>
-      </div>
+        <div ng-show="isTwoFactorMethod('authy')">
+          <form novalidate name="setPhoneForm" set-phone-form>
 
-      <div ng-show="showState('verifyPhone')">
-        <p class="u-typography-4 u-pullRight u-pushDown35 u-colorBlueGreyDark">
-          <a ng-click="resendOTP('true')">Resend code</a> | <a ng-click="prev()">Change phone</a>
-        </p>
-        <h1>Log In</h1>
+            <bg-form-error></bg-form-error>
 
-        <h2 class="u-typography-3 u-typography-medium">2-Step Verification Code</h2>
-
-        <form novalidate name="verifyPhoneForm" two-factor-form>
-
-          <bg-form-error></bg-form-error>
-
-          <div class="formRow" ng-class="{ 'formRow--error': otpVerifyError }">
-            <p class="notice" ng-show="otpVerifyError">Invalid code</p>
-            <div class="inputText">
-              <input name="otpVerify" class="inputText-input" ng-model="otpCode" placeholder="Enter Code" bg-input-validator bg-focus-when="true" bg-input-numbers-only max-length="7" />
+            <div class="inputText col-xss-12 col-xs-10 col-sm-7 col-md-7 col-lg-7 col--noPadding">
+              <bg-intl-tel-input name="phone" ng-model="user.settings.phone.phone" placeholder="Enter mobile phone number" bg-input-validator></bg-intl-tel-input>
             </div>
-          </div>
-
-          <div class="buttons">
-            <button type="submit" class="button" name="submitVerifyPhone" ng-click="submitVerifyPhone()">Submit</button>
-          </div>
-
-        </form>
+            <ul class="u-clear u-cleanList u-inlineList u-marginBottom30">
+              <li>
+                <button type="submit" class="button" ng-click="sendOTP()">Next</button>
+              </li>
+              <li>
+                <button class="button button--grey" type="defer" class="button" ng-click="deferTwoFactor()">I'll Do It Later</button>
+              </li>
+            </ul>
+          </form>
+        </div>
       </div>
 
+      <div ng-show="isTwoFactorMethod('yubikey')">
+        <h3>Yubikey Label</h3>
+
+        <form novalidate name="OTPForm">
+
+          <div class="inputText standardFormWidth">
+            <input name="otpLabel" class="inputText-input 'u-typography-4" ng-model="otpLabel" placeholder="Enter a Yubikey Label" bg-input-validator bg-focus-when="true" max-length="44" />
+          </div>
+
+          <h3>Yubikey Code</h3>
+
+          <form novalidate name="YubikeyForm">
+
+            <bg-form-error></bg-form-error>
+
+            <div class="formRow" ng-class="{ 'formRow--error': yubikeyAccessError }">
+              <!--p class="notice" ng-show1="otpAccessError">Invalid code</p-->
+              <div class="inputText">
+                <input name="otpVerify" class="inputText-input u-typography-4" ng-model="otpCode" placeholder="Enter a Yubikey Code" bg-input-validator bg-focus-when="true" max-length="47" />
+              </div>
+            </div>
+
+            <div class="buttons">
+              <button type="submit" class="button" name="submitSetYubikey" ng-click="submitSetYubikey()">Submit</button>
+              <button class="button button--grey" type="defer" class="button" ng-click="deferTwoFactor()">I'll Do It Later</button>
+            </div>
+        </form>
+      </div>
+    </div>
+
+    <div bg-otp-devices ng-show="showState('verifyPhone')">
+      <h1>
+        Log In
+        <span class="formHead-right-align"><a ng-click="resendOTP('true')">Resend code</a> | <a ng-click="prev()">Change device</a></span>
+      </h1>
+      <h2 class="u-typography-3 u-typography-medium">2-Step Verification Code</h2>
+
+      <form novalidate name="verifyPhoneForm">
+
+        <bg-form-error></bg-form-error>
+
+        <div class="formRow col-xss-12 col-xs-10 col-sm-7 col-md-7 col-lg-7 col--noPadding" ng-class="{ 'formRow--error': otpVerifyError }">
+          <p class="notice" ng-show="otpVerifyError">Invalid code</p>
+          <div class="inputText">
+            <input name="otpVerify" class="inputText-input u-typography-4" ng-model="otpCode" placeholder="Enter Code" bg-input-validator bg-focus-when="true" bg-input-numbers-only max-length="7" />
+          </div>
+        </div>
+
+        <div class="u-marginTop40 col-xss-12 col-xs-10 col-sm-7 col-md-7 col-lg-7 col--noPadding">
+          <button type="submit" class="button" name="submitVerifyPhone" ng-click="submitVerifyPhone()">Submit</button>
+        </div>
+
+      </form>
+    </div>
+    <div class="col col--centered">
       <div ng-show="showState('otp')">
+
         <p class="u-typography-4 u-pullRight u-pushDown35 u-colorBlueGreyDark"><a ng-click="resendOTP('true')">Resend code</a></p>
 
         <h1>Log In</h1>
 
         <h2 class="u-typography-3 u-typography-medium">2-Step Verification Code</h2>
 
-        <form novalidate name="OTPForm" two-factor-form>
+        <form novalidate name="OTPForm">
 
           <bg-form-error></bg-form-error>
 
           <div class="formRow" ng-class="{ 'formRow--error': otpAccessError }">
             <p class="notice" ng-show="otpAccessError">Invalid code</p>
             <div class="inputText">
-              <input name="otpAccess" class="inputText-input" ng-model="otpCode" placeholder="Enter code" bg-input-validator bg-focus-when="true" bg-input-numbers-only max-length="7" />
+              <input name="otpAccess" class="inputText-input" ng-model="otpCode" placeholder="Enter code" bg-input-validator bg-focus-when="true" max-length="44" />
             </div>
+          </div>
+
+          <div class="inputCheckbox">
+            <input type="checkbox" id="trustMachine" ng-model="trustMachine" />
+            <label for="trustMachine">Trust this device for 30 days</label>
           </div>
 
           <div class="buttons">
@@ -170,6 +265,54 @@
         </form>
       </div>
 
+      <div ng-show="showState('totpSetup')" class="col col--centered">
+        <p class="u-typography-4 u-pullRight u-pushDown35 u-colorBlueGreyDark"><a ng-click="newTotp()">Get a new code</a></p>
+        <h1>Log In</h1>
+
+        <form novalidate name="OTPForm">
+          <bg-form-error></bg-form-error>
+        </form>
+        <ul class="u-cleanList u-inlineList u-marginBottom30">
+          <div class="u-marginBottom30">
+            <h3>Use Google Authenticator to scan the code below</h3>
+          </div>
+          <div class="qrCode-modal-auth-border-outer">
+            <div class="qrCode-modal-border-inner">
+              <bg-qr-code height="200" text="{{ totpUrl.url }}"></bg-qr-code>
+            </div>
+          </div>
+        </ul>
+        <ul class="u-cleanList u-inlineList u-marginBottom30">
+
+          <h3>Print and Save the Code Below
+           <span>
+              <i class="icon-warning-sign ng-scope" popover-trigger="mouseenter" popover-placement="right" popover-template="auth/templates/warningpopover-partial.html"></i>
+            </span>
+          </h3>
+
+          <div class="inputText--readonly col--pullLeftFullWidth u-marginBottom30">
+            <textarea type="email" placeholder="Loading..." class="inputText-input inputText-totpCode" ng-model="totpUrl.key" readonly="readonly" disabled></textarea>
+          </div>
+        </ul>
+        <ul class="u-cleanList u-inlineList u-marginBottom30">
+          <h3>Enter your two-step verification code below</h3>
+        </ul>
+        <div class="formRow" ng-class="{ 'formRow--error': otpAccessError }">
+          <div class="inputText col-xss-12 col-xs-10 col-sm-10 col-md-10 col-lg-10 col--noPadding">
+           <input name="otpCode" class="inputText-input" ng-model="otpCode" placeholder="Enter the 6-digit code to verify" bg-input-validator bg-focus-when="true" max-length="6" />
+          </div>
+        </div>
+        <ul class="u-clear u-cleanList u-inlineList u-marginBottom30">
+          <li>
+            <a class="button u-marginTop30" type="submit" class="button" name="setTotp" ng-click="setTotp()">Submit</a>
+          </li>
+          <li>
+            <a class="button button--grey" type="cancel" class="button" ng-click="cancelTotp()">Cancel</a>
+          </li>
+        </ul>
+      </div>
     </div>
   </div>
 </div>
+
+

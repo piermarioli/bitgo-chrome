@@ -1,8 +1,8 @@
 APP_ENV = {
   'version': '0.1.2',
-  'revision': 'b5c2cc5',
-  'date': 'Thu Jul 09 2015 13:38:04',
-  'bitcoinNetwork': 'prod'
+  'revision': 'ffbd0f4',
+  'date': 'Mon Jan 04 2016 16:11:09',
+  'bitcoinNetwork': 'testnet'
 };(function (global) {
   // Locals & Constants
   //
@@ -16,11 +16,6 @@ APP_ENV = {
   var WATCH_PARAMS = {
       'code': true,
       'email': true
-    };
-  // Production hosts
-  var PROD_HOSTS = {
-      'staging.bitgo.com': true,
-      'www.bitgo.com': true
     };
   // App Config Setup
   //
@@ -61,22 +56,40 @@ APP_ENV = {
     if (!config) {
       throw new Error('missing config');
     }
+    function getSDKEnv() {
+      // Handle Chrome app
+      if (location.protocol === 'chrome-extension:' && typeof APP_ENV !== 'undefined') {
+        return APP_ENV.bitcoinNetwork === 'testnet' ? 'test' : 'prod';
+      }
+      // strip optional "." from the end of the hostname, if present (this almost
+      // never occurs in practice, but technically a hostname can end in a
+      // period).
+      var hostname = location.hostname;
+      if (hostname[hostname.length - 1] === '.') {
+        hostname = hostname.substr(0, hostname.length - 1);
+      }
+      var envs = {
+          'www.bitgo.com': 'prod',
+          'staging.bitgo.com': 'staging',
+          'webdev.bitgo.com': 'dev',
+          'test.bitgo.com': 'test',
+          'localhost': 'local'
+        };
+      return envs[hostname];
+    }
     /**
       * Check the production state of the app
       *
       * @returns { Bool }
       * @private
       */
-    function checkProductionState() {
-      var isChromeApp = location.protocol === 'chrome-extension:';
-      if (isChromeApp && typeof APP_ENV !== 'undefined') {
-        return APP_ENV.bitcoinNetwork !== 'testnet';
-      }
-      return _.has(PROD_HOSTS, location.hostname);
+    function isProd() {
+      var env = getSDKEnv();
+      return env === 'prod' || env === 'staging';
     }
     config.env = {
-      prodHosts: PROD_HOSTS,
-      isProd: checkProductionState
+      getSDKEnv: getSDKEnv,
+      isProd: isProd
     };
   }
   // URL Sanitizing
@@ -146,6 +159,21 @@ APP_ENV = {
       }
     }
   }
+  /**
+    * Dynamically call stripe javscript so that it only gets called after sanitizing referrer
+    *
+    * @private
+    */
+  function loadStripe() {
+    if (location.protocol === 'chrome-extension:') {
+      return;
+    }
+    var stripe = document.createElement('script');
+    stripe.async = true;
+    stripe.src = 'https://js.stripe.com/v2/';
+    var scriptInst = document.getElementsByTagName('script')[0];
+    scriptInst.parentNode.insertBefore(stripe, scriptInst);
+  }
   // App Initialization
   //
   /**
@@ -160,6 +188,7 @@ APP_ENV = {
     initConfigEnvironmentHelpers();
     // do any work needed before the app loads
     sanitizeRefererHeader();
+    loadStripe();
   }
   init();
 }(window));(function (global) {
@@ -195,10 +224,10 @@ APP_ENV = {
    * @private
    */
   function ABFactory(name) {
+    // TODO: this needs to be rewritten -- the salting was incorrect.
     // Salt to help randomize which group a user gets bucketed into
-    var userAbGroupSalt = Math.abs(sjcl.random.randomWords(1)[0]);
     // Which bucket the user will be dropped into
-    this.userAbGroup = (userAbGroupSalt + userAbTestId) % 100;
+    this.userAbGroup = userAbTestId % 100;
     // Unique name for this AB test instance
     this.name = name;
     // Storage object for all tests associated with this instance
@@ -588,581 +617,690 @@ APP_ENV = {
  *
  *
  */
-// Configure the app and module dependencies
-angular.module('BitGo', [
-  'BitGo.Analytics',
-  'BitGo.API',
-  'BitGo.App',
-  'BitGo.Auth',
-  'BitGo.Common',
-  'BitGo.Enterprise',
-  'BitGo.Interceptors',
-  'BitGo.Marketing',
-  'BitGo.Modals',
-  'BitGo.Model',
-  'BitGo.Notifications',
-  'BitGo.PostAuth',
-  'BitGo.Proof',
-  'BitGo.Settings',
-  'BitGo.Tools',
-  'BitGo.Utility',
-  'BitGo.Wallet',
-  'angular-md5',
-  'angularPayments',
-  'ga',
-  'ngCookies',
-  'ngRaven',
-  'ngResource',
-  'ngRoute',
-  'ngSanitize',
-  'ui.bootstrap'
-]).config([
-  '$routeProvider',
-  '$locationProvider',
-  function ($routeProvider, $locationProvider) {
-    var isChromeApp = location.protocol === 'chrome-extension:';
-    $locationProvider.html5Mode(!isChromeApp);
-    // Angular Factory function to ensure authorization when a route resolves
-    var requireAuth = [
-        '$rootScope',
-        '$q',
-        '$location',
-        'UserAPI',
-        'PostAuthService',
-        function ($rootScope, $q, $location, UserAPI, PostAuthService) {
-          var currentUser = $rootScope.currentUser;
-          if (currentUser.loggedIn) {
-            return true;
-          } else {
-            var deferred = $q.defer();
-            UserAPI.init().then(deferred.resolve(true), function () {
-              deferred.reject();
+var setupBitGoRoutes = function ($routeProvider) {
+  // Angular Factory function to ensure authorization when a route resolves
+  var requireAuth = [
+      '$rootScope',
+      '$q',
+      '$location',
+      'UserAPI',
+      'PostAuthService',
+      function ($rootScope, $q, $location, UserAPI, PostAuthService) {
+        var currentUser = $rootScope.currentUser;
+        if (currentUser.loggedIn) {
+          return true;
+        } else {
+          var deferred = $q.defer();
+          UserAPI.init().then(deferred.resolve(true), function () {
+            deferred.reject();
+            // set post auth if not set already
+            if (!PostAuthService.hasPostAuth()) {
               PostAuthService.setPostAuth('path', $location.path());
-              $location.path('/login');
-            });
-            return deferred.promise;
+            }
+            $location.path('/login');
+          });
+          return deferred.promise;
+        }
+      }
+    ];
+  var doneReferrerRedirect = false;
+  var doReferrerRedirects = [
+      '$location',
+      function ($location, $document, $q) {
+        if (!doneReferrerRedirect && $document[0].referrer) {
+          doneReferrerRedirect = true;
+          if ($document[0].referrer.indexOf('bitcoin.org') !== -1) {
+            $location.path('/wallet');
           }
         }
-      ];
-    // Proof of Reserves Partner Routes
-    $routeProvider.when('/proof/:company/:proofId', {
-      templateUrl: 'proofofreserves/templates/company-proof.html',
-      controller: 'CompanyProofController'
-    });
-    $routeProvider.when('/vbb/:company/:proofId', {
-      templateUrl: 'proofofreserves/templates/company-proof.html',
-      controller: 'CompanyProofController'
-    });
-    $routeProvider.when('/vbb/terms', { templateUrl: 'proofofreserves/templates/proof-terms.html' });
-    $routeProvider.when('/vbb/faq', { templateUrl: 'proofofreserves/templates/proof-faq.html' });
-    // Marketing Routes
-    $routeProvider.when('/', {
-      templateUrl: 'marketing/templates/landing.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/enterprise', {
-      templateUrl: 'marketing/templates/enterprise.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/platform', {
-      templateUrl: 'marketing/templates/platform.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/pricing', {
-      templateUrl: 'marketing/templates/pricing.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/terms', {
-      templateUrl: 'marketing/templates/terms.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/privacy', {
-      templateUrl: 'marketing/templates/privacy.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/p2sh_safe_address', {
-      templateUrl: 'marketing/templates/p2sh_safe_address.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/jobs', {
-      templateUrl: 'marketing/templates/jobs.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/press', {
-      templateUrl: 'marketing/templates/press.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/cases', {
-      templateUrl: 'marketing/templates/cases.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/about', {
-      templateUrl: 'marketing/templates/about.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/services_agreement', {
-      templateUrl: 'marketing/templates/services_agreement.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/insurance', {
-      templateUrl: 'marketing/templates/insurance.html',
-      controller: 'MarketingController'
-    });
-    $routeProvider.when('/sla', {
-      templateUrl: 'marketing/templates/sla.html',
-      controller: 'MarketingController'
-    });
-    // Auth Routes
-    $routeProvider.when('/login', {
-      templateUrl: 'auth/templates/login.html',
-      controller: 'LoginController'
-    });
-    $routeProvider.when('/logout', {
-      template: '',
-      controller: 'LogoutController'
-    });
-    $routeProvider.when('/signup', {
-      templateUrl: 'auth/templates/signup.html',
-      controller: 'SignupController'
-    });
-    $routeProvider.when('/resetpassword', {
-      templateUrl: 'auth/templates/resetpassword.html',
-      controller: 'ResetPwController'
-    });
-    $routeProvider.when('/forgotpassword', {
-      templateUrl: 'auth/templates/forgotpassword.html',
-      controller: 'ForgotPwController'
-    });
-    $routeProvider.when('/verifyemail', {
-      templateUrl: 'auth/templates/verifyemail.html',
-      controller: 'VerifyEmailController'
-    });
-    // TODO(ryan): The verifyforgotpassword route is obsolete and should be
-    // removed once the new client is live. Before removing it, be sure the
-    // email link is updated correctly so that the email link goes to
-    // /resetpassword instead of /verifyforgotpassword. The email link is
-    // located in www/app/controllers/api/notifications.tasks.js
-    $routeProvider.when('/verifyforgotpassword', {
-      templateUrl: 'auth/templates/resetpassword.html',
-      controller: 'ResetPwController'
-    });
-    // Hybrid Marketing/Auth Landing Pages
-    $routeProvider.when('/wallet', {
-      templateUrl: 'auth/templates/signup-walletvariant.html',
-      controller: 'SignupController'
-    });
-    // Account Settings Routes
-    $routeProvider.when('/settings', {
-      templateUrl: 'settings/templates/settings.html',
-      controller: 'SettingsController',
-      resolve: requireAuth,
-      reloadOnSearch: false
-    });
-    $routeProvider.when('/unsub', { templateUrl: 'settings/templates/emailunsubscribe.html' });
-    // Enterprise Routes
-    $routeProvider.when('/enterprise/:enterpriseId/wallets', {
-      templateUrl: 'enterprise/templates/wallets.html',
-      controller: 'EnterpriseWalletsController',
-      resolve: requireAuth
-    });
-    $routeProvider.when('/enterprise/:enterpriseId/activity', {
-      templateUrl: 'enterprise/templates/activity.html',
-      controller: 'EnterpriseActivityController',
-      resolve: requireAuth
-    });
-    $routeProvider.when('/enterprise/:enterpriseId/reports', {
-      templateUrl: 'enterprise/templates/reports.html',
-      controller: 'EnterpriseReportsController',
-      resolve: requireAuth
-    });
-    $routeProvider.when('/enterprise/:enterpriseId/settings', {
-      templateUrl: 'enterprise/templates/enterprise-settings.html',
-      controller: 'EnterpriseSettingsController',
-      resolve: requireAuth
-    });
-    $routeProvider.when('/personal/settings', {
-      templateUrl: 'enterprise/templates/personal-settings.html',
-      controller: 'PersonalSettingsController',
-      resolve: requireAuth
-    });
-    // Wallet Routes
-    $routeProvider.when('/enterprise/:enterpriseId/wallets/create', {
-      templateUrl: 'wallet/templates/wallet-create.html',
-      controller: 'WalletCreateController',
-      resolve: requireAuth
-    });
-    $routeProvider.when('/enterprise/:enterpriseId/wallets/:walletId', {
-      templateUrl: 'wallet/templates/wallet.html',
-      controller: 'WalletController',
-      resolve: requireAuth
-    });
-    $routeProvider.when('/enterprise/:enterpriseId/wallets/:walletId/recover', {
-      templateUrl: 'wallet/templates/wallet-recover.html',
-      controller: 'WalletRecoverController',
-      resolve: requireAuth
-    });
-    // BitGo Customer Tools Routes
-    $routeProvider.when('/tools/keychaincreator', {
-      templateUrl: 'tools/templates/keychaincreator.html',
-      controller: 'ToolsController'
-    });
-    // Unsupported Browser Route
-    $routeProvider.when('/unsupported', { templateUrl: 'interceptors/templates/unsupported.html' });
-  }
-]).config([
-  '$tooltipProvider',
-  function ($tooltipProvider) {
-    $tooltipProvider.setTriggers({
-      'mouseenter': 'mouseleave',
-      'click': 'click',
-      'focus': 'blur',
-      'showAddressPopover': 'showAddressPopover'
-    });
-  }
-]).config([
-  '$httpProvider',
-  function ($httpProvider) {
-    $httpProvider.interceptors.push('NetworkBusyInterceptor');
-    $httpProvider.interceptors.push('BrowserInterceptor');
-    $httpProvider.interceptors.push('VerificationInterceptor');
-    $httpProvider.interceptors.push('AuthTokenInterceptor');
-  }
-]).config([
-  'RavenProvider',
-  function (RavenProvider) {
-    function endsWith(s, t) {
-      return s && t && s.length >= t.length && s.substr(s.length - t.length) == t;
+      }
+    ];
+  // Proof of Reserves Partner Routes
+  $routeProvider.when('/proof/:company/:proofId', {
+    templateUrl: 'proofofreserves/templates/company-proof.html',
+    controller: 'CompanyProofController'
+  });
+  $routeProvider.when('/vbb/:company/:proofId', {
+    templateUrl: 'proofofreserves/templates/company-proof.html',
+    controller: 'CompanyProofController'
+  });
+  $routeProvider.when('/vbb/terms', { templateUrl: 'proofofreserves/templates/proof-terms.html' });
+  $routeProvider.when('/vbb/faq', { templateUrl: 'proofofreserves/templates/proof-faq.html' });
+  // Marketing Routes
+  $routeProvider.when('/', {
+    templateUrl: 'marketing/templates/landing.html',
+    controller: 'MarketingController',
+    resolve: doReferrerRedirects
+  });
+  $routeProvider.when('/enterprise', {
+    templateUrl: 'marketing/templates/enterprise.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/platform', {
+    templateUrl: 'marketing/templates/platform.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/terms', {
+    templateUrl: 'marketing/templates/terms.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/rewards-terms', {
+    templateUrl: 'marketing/templates/rewards-terms.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/rewards-faq', {
+    templateUrl: 'marketing/templates/rewards-faq.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/privacy', {
+    templateUrl: 'marketing/templates/privacy.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/p2sh_safe_address', {
+    templateUrl: 'marketing/templates/p2sh_safe_address.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/jobs', {
+    templateUrl: 'marketing/templates/jobs.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/press', {
+    templateUrl: 'marketing/templates/press.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/cases', {
+    templateUrl: 'marketing/templates/cases.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/about', {
+    templateUrl: 'marketing/templates/about.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/services_agreement', {
+    templateUrl: 'marketing/templates/services_agreement.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/insurance', {
+    templateUrl: 'marketing/templates/insurance.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/sla', {
+    templateUrl: 'marketing/templates/sla.html',
+    controller: 'MarketingController'
+  });
+  $routeProvider.when('/api-pricing', {
+    templateUrl: 'marketing/templates/api_pricing.html',
+    controller: 'MarketingController'
+  });
+  // Auth Routes
+  $routeProvider.when('/login', {
+    templateUrl: 'auth/templates/login.html',
+    controller: 'LoginController'
+  });
+  $routeProvider.when('/logout', {
+    template: '',
+    controller: 'LogoutController'
+  });
+  $routeProvider.when('/signup', {
+    templateUrl: 'auth/templates/signup.html',
+    controller: 'SignupController'
+  });
+  $routeProvider.when('/resetpassword', {
+    templateUrl: 'auth/templates/resetpassword.html',
+    controller: 'ResetPwController'
+  });
+  $routeProvider.when('/forgotpassword', {
+    templateUrl: 'auth/templates/forgotpassword.html',
+    controller: 'ForgotPwController'
+  });
+  $routeProvider.when('/verifyemail', {
+    templateUrl: 'auth/templates/verifyemail.html',
+    controller: 'VerifyEmailController'
+  });
+  // TODO(ryan): The verifyforgotpassword route is obsolete and should be
+  // removed once the new client is live. Before removing it, be sure the
+  // email link is updated correctly so that the email link goes to
+  // /resetpassword instead of /verifyforgotpassword. The email link is
+  // located in www/app/controllers/api/notifications.tasks.js
+  $routeProvider.when('/verifyforgotpassword', {
+    templateUrl: 'auth/templates/resetpassword.html',
+    controller: 'ResetPwController'
+  });
+  // Identity verification
+  $routeProvider.when('/identity/verify', {
+    templateUrl: 'identity/templates/verify.html',
+    controller: 'IdentityController',
+    resolve: requireAuth
+  });
+  // Hybrid Marketing/Auth Landing Pages
+  $routeProvider.when('/wallet', {
+    templateUrl: 'auth/templates/signup-walletvariant.html',
+    controller: 'SignupController'
+  });
+  // Account Settings and create org Routes
+  $routeProvider.when('/create-organization', {
+    templateUrl: 'enterprise/templates/enterprise-create.html',
+    controller: 'EnterpriseCreateController',
+    resolve: requireAuth
+  });
+  $routeProvider.when('/settings', {
+    templateUrl: 'settings/templates/settings.html',
+    controller: 'SettingsController',
+    resolve: requireAuth,
+    reloadOnSearch: false
+  });
+  $routeProvider.when('/unsub', { templateUrl: 'settings/templates/emailunsubscribe.html' });
+  // Enterprise Routes
+  $routeProvider.when('/enterprise/:enterpriseId/settings', {
+    templateUrl: 'enterprise/templates/enterprise-settings.html',
+    controller: 'EnterpriseSettingsController',
+    resolve: requireAuth
+  });
+  $routeProvider.when('/enterprise/:enterpriseId/wallets', {
+    templateUrl: 'enterprise/templates/wallets.html',
+    controller: 'EnterpriseWalletsController',
+    resolve: requireAuth
+  });
+  $routeProvider.when('/enterprise/:enterpriseId/activity', {
+    templateUrl: 'enterprise/templates/activity.html',
+    controller: 'EnterpriseActivityController',
+    resolve: requireAuth
+  });
+  $routeProvider.when('/enterprise/:enterpriseId/reports', {
+    templateUrl: 'enterprise/templates/reports.html',
+    controller: 'EnterpriseReportsController',
+    resolve: requireAuth
+  });
+  // Wallet Routes
+  $routeProvider.when('/enterprise/:enterpriseId/wallets/create', {
+    templateUrl: 'wallet/templates/wallet-create.html',
+    controller: 'WalletCreateController',
+    resolve: requireAuth
+  });
+  $routeProvider.when('/enterprise/:enterpriseId/wallets/:walletId', {
+    templateUrl: 'wallet/templates/wallet.html',
+    controller: 'WalletController',
+    resolve: requireAuth
+  });
+  $routeProvider.when('/enterprise/:enterpriseId/wallets/:walletId/recover', {
+    templateUrl: 'wallet/templates/wallet-recover.html',
+    controller: 'WalletRecoverController',
+    resolve: requireAuth
+  });
+  // Matchwallet Routes
+  $routeProvider.when('/matchwallet/:matchwalletId', {
+    templateUrl: 'matchwallet/templates/matchwallet.html',
+    controller: 'MatchwalletController',
+    resolve: requireAuth
+  });
+  // BitGo Customer Tools Routes
+  $routeProvider.when('/tools/keychaincreator', {
+    templateUrl: 'tools/templates/keychaincreator.html',
+    controller: 'ToolsController'
+  });
+  // Unsupported Browser Route
+  $routeProvider.when('/unsupported', { templateUrl: 'interceptors/templates/unsupported.html' });
+};
+var loadBitGoApp = function () {
+  // Configure the app and module dependencies
+  angular.module('BitGo', [
+    'BitGo.Analytics',
+    'BitGo.API',
+    'BitGo.App',
+    'BitGo.Auth',
+    'BitGo.Common',
+    'BitGo.Enterprise',
+    'BitGo.Interceptors',
+    'BitGo.Identity',
+    'BitGo.Marketing',
+    'BitGo.Modals',
+    'BitGo.Model',
+    'BitGo.Notifications',
+    'BitGo.PostAuth',
+    'BitGo.Proof',
+    'BitGo.Settings',
+    'BitGo.Tools',
+    'BitGo.Utility',
+    'BitGo.Wallet',
+    'BitGo.Matchwallet',
+    'angular-md5',
+    'angularPayments',
+    'ga',
+    'feature-flags',
+    'ngCookies',
+    'ngRaven',
+    'ngResource',
+    'ngRoute',
+    'ngSanitize',
+    'ui.bootstrap'
+  ]).config([
+    '$routeProvider',
+    '$locationProvider',
+    function ($routeProvider, $locationProvider) {
+      var isChromeApp = location.protocol === 'chrome-extension:';
+      $locationProvider.html5Mode(!isChromeApp);
+      setupBitGoRoutes($routeProvider);
     }
-    RavenProvider.development(!endsWith(location.hostname, '.bitgo.com'));
-    Raven.config('https://3b6ad9594a9146afa752be5d035d39db@app.getsentry.com/26556').install();
-  }
-]).config([
-  'BG_DEV',
-  function (BG_DEV) {
-    try {
-      Stripe.setPublishableKey(BG_DEV.STRIPE.TEST.PUBKEY);
-    } catch (e) {
-      // incase stripe javascript does not load
-      console.log(e.message);
+  ]).config([
+    '$tooltipProvider',
+    function ($tooltipProvider) {
+      $tooltipProvider.setTriggers({
+        'mouseenter': 'mouseleave',
+        'click': 'click',
+        'focus': 'blur',
+        'showAddressPopover': 'showAddressPopover'
+      });
     }
-  }
-]).config([
-  '$compileProvider',
-  function ($compileProvider) {
-    $compileProvider.aHrefSanitizationWhitelist(/^\s*(https?|ftp|mailto|chrome-extension):/);
-  }
-]).run([
-  '$rootScope',
-  '$interval',
-  'UtilityService',
-  'UserAPI',
-  'MarketDataAPI',
-  'SyncService',
-  'RequiredActionService',
-  function ($rootScope, $interval, UtilityService, UserAPI, MarketDataAPI, SyncService, RequiredActionService) {
-    // Set the API route if it hasn't been set
-    if (!UtilityService.API.apiServer) {
-      UtilityService.API.setApiServer();
+  ]).config([
+    '$httpProvider',
+    function ($httpProvider) {
+      $httpProvider.interceptors.push('BrowserInterceptor');
     }
-    // Initialize PRNG
-    var prng;
-    function initPrng(ttl) {
-      if (ttl < 4) {
-        try {
-          prng = new SecureRandom();
-          prng.clientSideRandomInit();
-          UtilityService.Crypto.setPrng(prng);
-        } catch (err) {
-          console.error('error initializing prng: (attempt ' + ttl + '):', err);
-          ttl++;
-          setTimeout(function () {
-            initPrng(ttl);
-          }, 1500);
+  ]).config([
+    'RavenProvider',
+    function (RavenProvider) {
+      function endsWith(s, t) {
+        return s && t && s.length >= t.length && s.substr(s.length - t.length) == t;
+      }
+      RavenProvider.development(!endsWith(location.hostname, '.bitgo.com'));
+      Raven.config('https://3b6ad9594a9146afa752be5d035d39db@app.getsentry.com/26556').install();
+    }
+  ]).config([
+    'BG_DEV',
+    function (BG_DEV) {
+      try {
+        Stripe.setPublishableKey(BG_DEV.STRIPE.TEST.PUBKEY);
+      } catch (e) {
+        // incase stripe javascript does not load
+        console.log(e.message);
+      }
+    }
+  ]).config([
+    '$compileProvider',
+    function ($compileProvider) {
+      $compileProvider.aHrefSanitizationWhitelist(/^\s*(https?|ftp|mailto|chrome-extension):/);
+      $compileProvider.imgSrcSanitizationWhitelist(/^\s*(https?|local|data|chrome-extension):/);
+    }
+  ]).run([
+    '$rootScope',
+    '$interval',
+    'UtilityService',
+    'UserAPI',
+    'MarketDataAPI',
+    'SyncService',
+    'RequiredActionService',
+    'SDK',
+    function ($rootScope, $interval, UtilityService, UserAPI, MarketDataAPI, SyncService, RequiredActionService, SDK) {
+      // Set the API route if it hasn't been set
+      // REFACTOR(ben): remove
+      if (!UtilityService.API.apiServer) {
+        UtilityService.API.setApiServer();
+      }
+      // Initialize SJCL browser collectors
+      function initPrng(ttl) {
+        if (ttl < 4) {
+          try {
+            SDK.sjcl.random.startCollectors();
+          } catch (err) {
+            console.error('error initializing prng: (attempt ' + ttl + '):', err);
+            ttl++;
+            setTimeout(function () {
+              initPrng(ttl);
+            }, 1500);
+          }
         }
       }
-    }
-    initPrng(0);
-    // Set Chrome App-specific details
-    $rootScope.TemplatePathPrefix = UtilityService.Global.isChromeApp ? 'index.html#' : '';
-    // Set Bitcoin Network and external urls
-    Bitcoin.setNetwork(BitGoConfig.env.isProd() ? 'prod' : 'testnet');
-    if (Bitcoin.network == 'testnet') {
-      $rootScope.externalTransactionUrl = 'https://www.blocktrail.com/tBTC/tx/';
-      $rootScope.externalAddressUrl = 'https://www.blocktrail.com/tBTC/address/';
-    } else {
-      $rootScope.externalTransactionUrl = 'http://www.blocktrail.com/BTC/tx/';
-      $rootScope.externalAddressUrl = 'https://www.blocktrail.com/BTC/address/';
-    }
-    // Initialize the app user only if we are accessing the web app
-    if (!UtilityService.Url.isMarketingPage()) {
-      UserAPI.init().then(function (user) {
-        console.log('Initialized with a user: ', user);
-      }).catch(function (error) {
-        console.log('Initialized without a user: ', error);
-      });
-    }
-    // Initialize the app currency data / poll
-    function initMarketDataPoll() {
-      $interval(function () {
+      initPrng(0);
+      // Set Chrome App-specific details
+      $rootScope.TemplatePathPrefix = UtilityService.Global.isChromeApp ? 'index.html#' : '';
+      // Set Bitcoin Network and external urls
+      if (!BitGoConfig.env.isProd()) {
+        $rootScope.externalTransactionUrl = 'https://tbtc.blockr.io/tx/info/';
+        $rootScope.externalAddressUrl = 'https://tbtc.blockr.io/address/info/';
+      } else {
+        $rootScope.externalTransactionUrl = 'http://www.tradeblock.com/bitcoin/tx/';
+        $rootScope.externalAddressUrl = 'https://www.tradeblock.com/bitcoin/address/';
+      }
+      // Initialize the app currency data / poll
+      function initMarketDataPoll() {
+        $interval(function () {
+          MarketDataAPI.latest().catch(function (error) {
+            console.log('Error when polling financial data: ', error);
+          });
+        }, 10000);
         MarketDataAPI.latest().catch(function (error) {
-          console.log('Error when polling financial data: ', error);
+          console.log('Initialized without financial data: ', error);
         });
-      }, 10000);
-      MarketDataAPI.latest().catch(function (error) {
-        console.log('Initialized without financial data: ', error);
+      }
+      initMarketDataPoll();
+      // Run these tasks on major url changes
+      $rootScope.$on('$routeChangeStart', function (event, next, current) {
+        var userLoggingOut = next.$$route.originalPath.indexOf('logout') > -1;
+        // Sync the app data
+        if (!userLoggingOut && $rootScope.currentUser.loggedIn && $rootScope.currentUser.hasAccess) {
+          SyncService.sync();
+        }
+        // Wipe all required actions on user logout
+        if (userLoggingOut) {
+          RequiredActionService.killAllActions();
+        }
       });
     }
-    initMarketDataPoll();
-    // Run these tasks on major url changes
-    $rootScope.$on('$routeChangeStart', function (event, next, current) {
-      var userLoggingOut = next.$$route.originalPath.indexOf('logout') > -1;
-      // Sync the app data
-      if (!userLoggingOut && $rootScope.currentUser.loggedIn && $rootScope.currentUser.hasAccess) {
-        SyncService.sync();
-      }
-      // Wipe all required actions on user logout
-      if (userLoggingOut) {
-        RequiredActionService.killAllActions();
-      }
-    });
-  }
-]).run([
-  '$rootScope',
-  'BG_DEV',
-  'AnalyticsProxy',
-  function ($rootScope, BG_DEV, AnalyticsProxy) {
-    // This is the context that we use to track the user movement through
-    // the app - as opposed to url/nav changes, we use changes to this
-    // context to fire tracking events to mixpanel and understand user movement
-    var CURRENT_CONTEXT = 'initApp';
-    var PREV_CONTEXT = null;
-    /**
-    * Set the app context and trigger user nav tracking event
-    * @param ctx {String}
-    *
-    * @public
-    */
-    $rootScope.setContext = function (ctx) {
-      if (!ctx || !_.has(BG_DEV.APP_CONTEXTS, ctx)) {
-        throw new Error('invalid context');
-      }
-      // don't set the context if it hasn't changed
-      if (ctx === CURRENT_CONTEXT) {
+  ]).run([
+    '$rootScope',
+    'BG_DEV',
+    'AnalyticsProxy',
+    function ($rootScope, BG_DEV, AnalyticsProxy) {
+      // This is the context that we use to track the user movement through
+      // the app - as opposed to url/nav changes, we use changes to this
+      // context to fire tracking events to mixpanel and understand user movement
+      var CURRENT_CONTEXT = 'initApp';
+      var PREV_CONTEXT = null;
+      /**
+      * Set the app context and trigger user nav tracking event
+      * @param ctx {String}
+      *
+      * @public
+      */
+      $rootScope.setContext = function (ctx) {
+        if (!ctx || !_.has(BG_DEV.APP_CONTEXTS, ctx)) {
+          throw new Error('invalid context');
+        }
+        // don't set the context if it hasn't changed
+        if (ctx === CURRENT_CONTEXT) {
+          return CURRENT_CONTEXT;
+        }
+        // update the context and track it
+        PREV_CONTEXT = _.clone(CURRENT_CONTEXT);
+        CURRENT_CONTEXT = ctx;
+        AnalyticsProxy.track('Nav');
         return CURRENT_CONTEXT;
-      }
-      // update the context and track it
-      PREV_CONTEXT = _.clone(CURRENT_CONTEXT);
-      CURRENT_CONTEXT = ctx;
-      AnalyticsProxy.track('Nav');
-      return CURRENT_CONTEXT;
-    };
-    /**
-    * Get the app context
-    *
-    * @public
-    */
-    $rootScope.getContext = function () {
-      return {
-        current: CURRENT_CONTEXT,
-        previous: PREV_CONTEXT
       };
-    };
-  }
-]).run([
-  'AnalyticsProxy',
-  function (AnalyticsProxy) {
-    AB.registerAll(AnalyticsProxy);
-  }
-]).constant('BG_DEV', {
-  ERRORS: {
-    INVALID_BITCOIN_UNIT: 'Expected a valid unit when setting the app bitcoin unit.',
-    INVALID_CURRENCY: 'Expected a valid currency when setting the app currency.',
-    INVALID_ROOT_USER_PROP: 'Can only set an existing property on RootUser'
-  },
-  CURRENCY: {
-    DEFAULTS: {
-      BITCOIN_UNIT: 'BTC',
-      CURRENCY: 'USD'
-    },
-    VALID_CURRENCIES: [
-      'AUD',
-      'CAD',
-      'CNY',
-      'EUR',
-      'GBP',
-      'USD',
-      'ZAR'
-    ],
-    VALID_BITCOIN_UNITS: [
-      'BTC',
-      'BTC8',
-      'bits',
-      'satoshis'
-    ]
-  },
-  PASSWORD: { MIN_STRENGTH: 80 },
-  REQUIRED_ACTIONS: { WEAK_PW: 'weakAccountPasswordUpgrade' },
-  MODAL_TYPES: {
-    otp: 'otp',
-    otpThenUnlock: 'otpThenUnlock',
-    passwordThenUnlock: 'passwordThenUnlock',
-    offlineWarning: 'offlineWarning',
-    deactivationConfirmation: 'deactivationConfirmation',
-    qrReceiveAddress: 'qrReceiveAddress'
-  },
-  MODAL_USER_ACTIONS: {
-    otp: 'otp',
-    createShare: 'createShare',
-    acceptShare: 'acceptShare',
-    sendFunds: 'sendFunds',
-    approveSendFunds: 'approveSendFunds',
-    createAccessToken: 'createAccessToken',
-    offlineWarning: 'offlineWarning',
-    deactivationConfirmation: 'deactivationConfirmation',
-    qrReceiveAddress: 'qrReceiveAddress'
-  },
-  TX: {
-    MINIMUM_BTC_DUST: 5460,
-    MAXIMUM_BTC_SPENDING_LIMIT: 10000 * 100000000
-  },
-  USER: {
-    ACCOUNT_LEVELS: {
-      basic: {
-        level: 1,
-        name: 'basic',
-        prettyName: 'Basic',
-        planId: 'Basic'
-      },
-      plusAnnual: {
-        level: 2,
-        name: 'plus',
-        prettyName: 'Plus',
-        planId: 'PlusAnnual'
-      },
-      proAnnual: {
-        level: 3,
-        name: 'pro',
-        prettyName: 'Pro',
-        planId: 'ProAnnual'
-      },
-      plusMonthly: {
-        level: 2,
-        name: 'plus',
-        prettyName: 'Plus',
-        planId: 'PlusMonthly'
-      },
-      proMonthly: {
-        level: 3,
-        name: 'pro',
-        prettyName: 'Pro',
-        planId: 'ProMonthly'
-      },
-      grandfathered: {
-        level: 1,
-        name: 'grandfathered',
-        prettyName: 'Basic',
-        planId: 'Grandfathered'
+      /**
+      * Get the app context
+      *
+      * @public
+      */
+      $rootScope.getContext = function () {
+        return {
+          current: CURRENT_CONTEXT,
+          previous: PREV_CONTEXT
+        };
+      };
+    }
+  ]).run([
+    'AnalyticsProxy',
+    function (AnalyticsProxy) {
+      AB.registerAll(AnalyticsProxy);
+    }
+  ]).constant('BG_DEV', {
+    BILLING: {
+      MODIFICATION_TYPE: {
+        add: 'add',
+        remove: 'remove'
       }
     },
-    BILLING_CYCLE: {
-      monthly: 'Monthly',
-      annual: 'Annual'
-    }
-  },
-  WALLET: {
-    PERMISSIONS: {
-      ADMIN: 'admin',
-      SPEND: 'spend',
-      VIEW: 'view'
+    ERRORS: {
+      INVALID_BITCOIN_UNIT: 'Expected a valid unit when setting the app bitcoin unit.',
+      INVALID_CURRENCY: 'Expected a valid currency when setting the app currency.',
+      INVALID_ROOT_USER_PROP: 'Can only set an existing property on RootUser'
     },
-    ROLES: {
-      ADMIN: 'Admin',
-      SPEND: 'Spender',
-      VIEW: 'Viewer'
+    CURRENCY: {
+      DEFAULTS: {
+        BITCOIN_UNIT: 'BTC',
+        CURRENCY: 'USD'
+      },
+      VALID_CURRENCIES: [
+        'AUD',
+        'CAD',
+        'CNY',
+        'EUR',
+        'GBP',
+        'USD',
+        'ZAR'
+      ],
+      VALID_BITCOIN_UNITS: [
+        'BTC',
+        'BTC8',
+        'bits',
+        'satoshis'
+      ]
     },
-    POLICY_TYPES: {
-      bitcoinAddressWhitelist: 'bitcoinAddressWhitelist',
-      transactionLimit: 'transactionLimit',
-      dailyLimit: 'dailyLimit'
+    PASSWORD: { MIN_STRENGTH: 80 },
+    REQUIRED_ACTIONS: { WEAK_PW: 'weakAccountPasswordUpgrade' },
+    MODAL_TYPES: {
+      otp: 'otp',
+      otpThenUnlock: 'otpThenUnlock',
+      passwordThenUnlock: 'passwordThenUnlock',
+      offlineWarning: 'offlineWarning',
+      deactivationConfirmation: 'deactivationConfirmation',
+      qrReceiveAddress: 'qrReceiveAddress',
+      ssReceiveAltCoin: 'ssReceiveAltCoin',
+      createWallet: 'createWallet',
+      fundWallet: 'fundWallet',
+      identityVerificationFailed: 'identityVerificationFailed'
     },
-    BITGO_POLICY_IDS: {
-      'com.bitgo.whitelist.address': 'com.bitgo.whitelist.address',
-      'com.bitgo.limit.day': 'com.bitgo.limit.day',
-      'com.bitgo.limit.tx': 'com.bitgo.limit.tx'
+    MODAL_USER_ACTIONS: {
+      otp: 'otp',
+      createShare: 'createShare',
+      acceptShare: 'acceptShare',
+      sendFunds: 'sendFunds',
+      approveSendFunds: 'approveSendFunds',
+      createAccessToken: 'createAccessToken',
+      offlineWarning: 'offlineWarning',
+      deactivationConfirmation: 'deactivationConfirmation',
+      qrReceiveAddress: 'qrReceiveAddress',
+      ssReceiveAltCoin: 'ssReceiveAltCoin',
+      createWallet: 'createWallet',
+      fundWallet: 'fundWallet',
+      identityVerificationFailed: 'identityVerificationFailed'
     },
-    WALLET_TYPES: {
-      SAFEHD: 'safehd',
-      SAFE: 'safe'
+    TX: { MINIMUM_BTC_DUST: 5460 },
+    USER: {
+      ACCOUNT_LEVELS: {
+        basic: {
+          level: 1,
+          name: 'basic',
+          prettyName: 'Basic',
+          planId: 'Basic',
+          cost: 0
+        },
+        plusAnnual: {
+          level: 2,
+          name: 'plus',
+          prettyName: 'Plus',
+          planId: 'PlusAnnual'
+        },
+        proAnnual: {
+          level: 3,
+          name: 'pro',
+          prettyName: 'Pro',
+          planId: 'ProAnnual'
+        },
+        plusMonthly: {
+          level: 2,
+          name: 'plus',
+          prettyName: 'Plus',
+          planId: 'PlusMonthly',
+          cost: 10
+        },
+        proMonthly: {
+          level: 3,
+          name: 'pro',
+          prettyName: 'Pro',
+          planId: 'ProMonthly',
+          cost: 30
+        },
+        grandfathered: {
+          level: 1,
+          name: 'grandfathered',
+          prettyName: 'Basic',
+          planId: 'Grandfathered',
+          cost: 0
+        }
+      },
+      BILLING_CYCLE: {
+        monthly: 'Monthly',
+        annual: 'Annual'
+      }
+    },
+    REFERRER: { BITFINEX: 'bitfinex' },
+    ENTERPRISE: {
+      SUPPORT_PLAN_LEVELS: {
+        OrgBasicMonthly: {
+          level: 1,
+          planId: 'OrgBasicMonthly',
+          prettyName: 'Basic',
+          cost: 0
+        },
+        OrgProMonthly: {
+          level: 2,
+          planId: 'OrgProMonthly',
+          prettyName: 'Professional',
+          cost: 30
+        },
+        OrgBusinessMonthly: {
+          level: 3,
+          planId: 'OrgBusinessMonthly',
+          prettyName: 'Business',
+          cost: 500
+        },
+        OrgBusinessPlusMonthly: {
+          level: 4,
+          planId: 'OrgBusinessPlusMonthly',
+          prettyName: 'Business Plus',
+          cost: 1500
+        },
+        custom: {
+          level: 5,
+          planId: 'custom',
+          prettyName: 'Custom'
+        },
+        external: {
+          level: 1,
+          planId: 'external',
+          prettyName: 'Pre existing'
+        }
+      },
+      BITFINEX_ID: '5542a59828e67a7906f1b554f92571b8'
+    },
+    WALLET: {
+      PERMISSIONS: {
+        ADMIN: 'admin',
+        SPEND: 'spend',
+        VIEW: 'view'
+      },
+      ROLES: {
+        ADMIN: 'Admin',
+        SPEND: 'Spender',
+        VIEW: 'Viewer'
+      },
+      POLICY_TYPES: {
+        bitcoinAddressWhitelist: 'bitcoinAddressWhitelist',
+        transactionLimit: 'transactionLimit',
+        dailyLimit: 'dailyLimit'
+      },
+      BITGO_POLICY_IDS: {
+        'com.bitgo.whitelist.address': 'com.bitgo.whitelist.address',
+        'com.bitgo.limit.day': 'com.bitgo.limit.day',
+        'com.bitgo.limit.tx': 'com.bitgo.limit.tx'
+      },
+      WALLET_TYPES: {
+        SAFEHD: 'safehd',
+        SAFE: 'safe'
+      }
+    },
+    AUDIT_LOG: {
+      BACKUP_KEY_METHODS: {
+        OFFLINE: 'cold',
+        BROWSER: 'user'
+      }
+    },
+    MARKETING_PATHS: [
+      '/',
+      '/platform',
+      '/enterprise',
+      '/terms',
+      '/about',
+      '/help',
+      '/jobs',
+      '/api',
+      '/blog',
+      '/p2sh_safe_address',
+      '/privacy',
+      '/press',
+      '/cases',
+      '/about',
+      '/wallet',
+      '/services_agreement',
+      '/insurance',
+      '/sla',
+      '/api-pricing'
+    ],
+    ANALYTICS: {
+      TOOLS: ['Mixpanel'],
+      MIXPANEL: {
+        NAME: 'Mixpanel',
+        APP_TOKEN: BitGoConfig.env.isProd() ? '97c8108bf199a67ac9d2dace818b5a73' : 'f4ad58617c9bb4fd19d424da990fdb31'
+      }
+    },
+    STRIPE: { TEST: { PUBKEY: BitGoConfig.env.isProd() ? 'pk_live_NFfhntKdt7M6SLS0WZYu6BcY' : 'pk_test_0fcm4T4oQ7twiU4aWnORa6PS' } },
+    MATCHWALLET: { MIN_INVITATION_AMOUNT: 400000 },
+    BACKUP_KEYS: {
+      krsProviders: [{
+          id: 'keyternal',
+          displayName: 'Keyternal',
+          image: '/img/keyternal_blur.png',
+          url: 'https://keytern.al/'
+        }]
+    },
+    APP_CONTEXTS: {
+      signup: 'signup',
+      login: 'login',
+      forgotPassword: 'forgotPassword',
+      resetPassword: 'resetPassword',
+      identityVerification: 'identityVerification',
+      enterpriseSettings: 'enterpriseSettings',
+      enterpriseWalletsList: 'enterpriseWalletsList',
+      enterpriseReports: 'enterpriseReports',
+      enterpriseActivity: 'enterpriseActivity',
+      createEnterprise: 'createEnterprise',
+      walletSend: 'walletSend',
+      walletReceive: 'walletReceive',
+      walletTransactions: 'walletTransactions',
+      walletPolicy: 'walletPolicy',
+      walletUsers: 'walletUsers',
+      walletSettings: 'walletSettings',
+      createWallet: 'createWallet',
+      matchwalletSend: 'matchwalletSend',
+      matchwalletInvitations: 'matchwalletInvitations',
+      accountSettings: 'accountSettings',
+      marketingHome: 'marketingHome',
+      marketingAPI: 'marketingAPI',
+      marketingEnterprise: 'marketingEnterprise',
+      marketingTerms: 'marketingTerms',
+      marketingJobs: 'marketingJobs',
+      marketingWhitePaper: 'marketingWhitePaper',
+      marketingInsurance: 'marketingInsurance',
+      marketingPrivacy: 'marketingPrivacy',
+      marketingPress: 'marketingPress',
+      marketingCases: 'marketingCases',
+      marketingAbout: 'marketingAbout',
+      marketingServicesAgreement: 'marketingServicesAgreement',
+      marketingSla: 'marketingSla',
+      marketingApiPricing: 'marketingApiPricing'
     }
-  },
-  AUDIT_LOG: {
-    BACKUP_KEY_METHODS: {
-      OFFLINE: 'cold',
-      BROWSER: 'user'
-    }
-  },
-  MARKETING_PATHS: [
-    '/',
-    '/platform',
-    '/enterprise',
-    '/terms',
-    '/about',
-    '/help',
-    '/jobs',
-    '/api',
-    '/blog',
-    '/p2sh_safe_address',
-    '/privacy',
-    '/press',
-    '/cases',
-    '/about',
-    '/wallet',
-    '/services_agreement',
-    '/insurance',
-    '/pricing',
-    '/sla'
-  ],
-  ANALYTICS: {
-    TOOLS: ['Mixpanel'],
-    MIXPANEL: {
-      NAME: 'Mixpanel',
-      APP_TOKEN: BitGoConfig.env.isProd() ? '97c8108bf199a67ac9d2dace818b5a73' : 'f4ad58617c9bb4fd19d424da990fdb31'
-    }
-  },
-  STRIPE: { TEST: { PUBKEY: BitGoConfig.env.isProd() ? 'pk_live_NFfhntKdt7M6SLS0WZYu6BcY' : 'pk_test_0fcm4T4oQ7twiU4aWnORa6PS' } },
-  APP_CONTEXTS: {
-    signup: 'signup',
-    login: 'login',
-    forgotPassword: 'forgotPassword',
-    resetPassword: 'resetPassword',
-    enterpriseSettings: 'enterpriseSettings',
-    enterpriseWalletsList: 'enterpriseWalletsList',
-    enterpriseReports: 'enterpriseReports',
-    enterpriseActivity: 'enterpriseActivity',
-    walletSend: 'walletSend',
-    walletReceive: 'walletReceive',
-    walletTransactions: 'walletTransactions',
-    walletPolicy: 'walletPolicy',
-    walletUsers: 'walletUsers',
-    walletSettings: 'walletSettings',
-    createWallet: 'createWallet',
-    accountSettings: 'accountSettings',
-    marketingHome: 'marketingHome',
-    marketingAPI: 'marketingAPI',
-    marketingEnterprise: 'marketingEnterprise',
-    marketingTerms: 'marketingTerms',
-    marketingJobs: 'marketingJobs',
-    marketingWhitePaper: 'marketingWhitePaper',
-    marketingInsurance: 'marketingInsurance',
-    marketingPrivacy: 'marketingPrivacy',
-    marketingPress: 'marketingPress',
-    marketingCases: 'marketingCases',
-    marketingAbout: 'marketingAbout',
-    marketingServicesAgreement: 'marketingServicesAgreement',
-    marketingPricing: 'marketingPricing',
-    marketingSla: 'marketingSla'
-  }
-});/**
+  });
+};
+// This file is loaded by the server to pull the client routes dynamically, so it needs
+// to be require-able.
+if (typeof module !== 'undefined' && module.exports) {
+  // For node
+  module.exports = setupBitGoRoutes;
+} else {
+  // For client
+  loadBitGoApp();
+}/**
  * @ngdoc module
  * @name BitGo.Analytics
  * @description
@@ -1745,50 +1883,22 @@ angular.module('BitGo.Analytics.MixpanelProvider', []).factory('MixpanelProvider
  * the SDK can be used throughout the client.
  */
 angular.module('BitGo.API.SDK', ['ngResource']).factory('SDK', [
+  '$q',
   'CacheService',
-  function (CacheService) {
+  'UtilityService',
+  function ($q, CacheService, Utils) {
     var sdkCache = new CacheService.Cache('sessionStorage', 'SDK');
-    // the environment variable, normally set to "prod", "staging", "test",
-    // "webdev" or "local"
-    var env;
+    var PromiseErrorHelper = Utils.API.promiseErrorHelper;
     // if a URL other than one of the standard ones (www.bitgo.com, etc.) is
     // detected, this gets set to that URL
     var customRootURI;
     // the network (bitcoin or test) if we aren't using one of the standard
     // environments
     var customBitcoinNetwork;
-    // strip optional "." from the end of the hostname, if present (this almost
-    // never occurs in practice, but technically a hostname can end in a
-    // period).
-    var hostname = location.hostname;
-    if (hostname[hostname.length - 1] === '.') {
-      hostname = hostname.substr(0, hostname.length - 1);
-    }
-    // Handle the case of the chrome app first
-    if (location.protocol === 'chrome-extension:') {
-      env = BitGoConfig.env.isProd() ? 'prod' : 'test';
-    } else {
-      // determine what environment to use
-      switch (hostname) {
-      case 'www.bitgo.com':
-        env = 'prod';
-        break;
-      case 'staging.bitgo.com':
-        env = 'staging';
-        break;
-      case 'test.bitgo.com':
-        env = 'test';
-        break;
-      case 'webdev.bitgo.com':
-        env = 'dev';
-        break;
-      case 'localhost':
-        env = 'local';
-        break;
-      default:
-        customRootURI = 'https://' + location.host;
-        customBitcoinNetwork = BitGoConfig.env.isProd() ? 'bitcoin' : 'test';
-      }
+    var env = BitGoConfig.env.getSDKEnv();
+    if (!env) {
+      customRootURI = 'https://' + location.host;
+      customBitcoinNetwork = 'test';
     }
     // parameters for constructing SDK object
     var params = {
@@ -1799,11 +1909,58 @@ angular.module('BitGo.API.SDK', ['ngResource']).factory('SDK', [
       };
     var sdk;
     return {
+      bitcoin: BitGoJS.bitcoin,
+      sjcl: BitGoJS.sjcl,
       get: function () {
         if (sdk) {
           return sdk;
         }
         return this.load();
+      },
+      getNetwork: function () {
+        return this.bitcoin.networks[BitGoJS.getNetwork()];
+      },
+      doPost: function (url, data, field) {
+        var sdk = this.get();
+        return sdk.post(sdk.url(url)).send(data).result(field);
+      },
+      doPut: function (url, data, field) {
+        var sdk = this.get();
+        return sdk.put(sdk.url(url)).send(data).result(field);
+      },
+      doGet: function (url, data, field) {
+        var sdk = this.get();
+        return sdk.get(sdk.url(url)).query(data).result(field);
+      },
+      doDelete: function (url, data, field) {
+        data = data || {};
+        var sdk = this.get();
+        return sdk.del(sdk.url(url)).send(data).result(field);
+      },
+      encrypt: function (password, message) {
+        return this.get().encrypt({
+          password: password,
+          input: message
+        });
+      },
+      decrypt: function (password, message) {
+        return this.get().decrypt({
+          password: password,
+          input: message
+        });
+      },
+      generateRandomPassword: function (numWords) {
+        numWords = numWords || 5;
+        var bytes = this.sjcl.codec.bytes.fromBits(this.sjcl.random.randomWords(numWords));
+        return BitGoJS.bs58.encode(bytes);
+      },
+      passwordHMAC: function (email, password) {
+        var sjcl = this.sjcl;
+        var out = new sjcl.misc.hmac(sjcl.codec.utf8String.toBits(email), sjcl.hash.sha256).mac(password);
+        return sjcl.codec.hex.fromBits(out).toLowerCase();
+      },
+      wrap: function (promise) {
+        return $q.when(promise).catch(PromiseErrorHelper());
       },
       load: function () {
         var json = sdkCache.get('sdk');
@@ -1835,13 +1992,11 @@ angular.module('BitGo.API.SDK', ['ngResource']).factory('SDK', [
  * @description
  * This manages app API requests for the access token functionality in BitGo
  */
+/* istanbul ignore next */
 angular.module('BitGo.API.AccessTokensAPI', []).factory('AccessTokensAPI', [
   '$resource',
-  'UtilityService',
-  function ($resource, UtilityService) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+  'SDK',
+  function ($resource, SDK) {
     /**
     * Add an access token to a user
     * @param params {Object}
@@ -1851,16 +2006,14 @@ angular.module('BitGo.API.AccessTokensAPI', []).factory('AccessTokensAPI', [
       if (!params) {
         throw new Error('missing params');
       }
-      var resource = $resource(kApiServer + '/user/accesstoken', {}, { 'add': { method: 'POST' } });
-      return new resource(params).$add().then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doPost('/user/accesstoken', params));
     }
     /**
     * Lists the access tokens for a user
     * @private
     */
     function list() {
-      var resource = $resource(kApiServer + '/user/accesstoken', {});
-      return new resource.get({}).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doGet('/user/accesstoken'));
     }
     /**
     * Remove an access token for a user
@@ -1870,8 +2023,7 @@ angular.module('BitGo.API.AccessTokensAPI', []).factory('AccessTokensAPI', [
       if (!accessTokenId) {
         throw new Error('missing accessTokenId');
       }
-      var resource = $resource(kApiServer + '/user/accesstoken/' + accessTokenId, {});
-      return new resource({}).$delete().then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doDelete('/user/accesstoken/' + accessTokenId));
     }
     // Client API
     return {
@@ -1889,6 +2041,7 @@ angular.module('BitGo.API', [
   'BitGo.API.ApprovalsAPI',
   'BitGo.API.AuditLogAPI',
   'BitGo.API.EnterpriseAPI',
+  'BitGo.API.IdentityAPI',
   'BitGo.API.KeychainsAPI',
   'BitGo.API.LabelsAPI',
   'BitGo.API.JobsAPI',
@@ -1903,71 +2056,94 @@ angular.module('BitGo.API', [
   'BitGo.API.UserAPI',
   'BitGo.API.WalletsAPI',
   'BitGo.API.WalletSharesAPI',
+  'BitGo.API.MatchwalletAPI',
+  'BitGo.API.ssAPI',
   'BitGo.Model',
-  'BitGo.Utility'
+  'BitGo.Utility',
+  'feature-flags'
 ]);/**
  * @ngdoc service
  * @name ApprovalsAPI
  * @description
  * Manages the http requests dealing with a wallet's approval objects
  */
+/* istanbul ignore next */
 angular.module('BitGo.API.ApprovalsAPI', []).factory('ApprovalsAPI', [
   '$q',
   '$location',
   '$resource',
-  'UtilityService',
-  function ($q, $location, $resource, UtilityService) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+  'SDK',
+  '$rootScope',
+  function ($q, $location, $resource, SDK, $rootScope) {
     /**
-    * Updates a wallet's specific approval
+    * Updates a specific approval
     * @param {string} approvalId for the approval
     * @param {obj} object containing details needed to update the approval
     * @private
     */
     function update(approvalId, approvalData) {
-      var resource = $resource(kApiServer + '/pendingapprovals/' + approvalId, {}, { update: { method: 'PUT' } });
-      return new resource(approvalData).$update({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+      // TODO: SDK has method, but no way to construct a pending approval object from id
+      return SDK.wrap(SDK.doPut('/pendingapprovals/' + approvalId, approvalData));
     }
+    /**
+    * Get all the pending approvals for a user
+    * @public
+    * @returns {promise} - with pending approvals data
+    */
+    function getApprovals(params) {
+      if (!params.enterprise) {
+        throw new Error('invalid params for getApprovals');
+      }
+      // TODO: SDK has method, but no way to construct a pending approval object from id
+      return SDK.wrap(SDK.doGet('/pendingapprovals', params));
+    }
+    // When the enterprise is set, get all the approvals
+    $rootScope.$on('EnterpriseAPI.CurrentEnterpriseSet', function (evt, data) {
+      // list of enterprises which the user is an admin on
+      var adminEnterprises = [];
+      _.forIn($rootScope.enterprises.all, function (enterprise) {
+        if (enterprise.isAdmin && !enterprise.isPersonal) {
+          adminEnterprises.push(enterprise);
+        }
+      });
+      // Get all the pennding approvals and set it on the enterprise object
+      return $q.all(adminEnterprises.map(function (enterprise) {
+        return getApprovals({ enterprise: enterprise.id }).then(function (data) {
+          $rootScope.enterprises.all[enterprise.id].setApprovals(data.pendingApprovals);
+        });
+      }));
+    });
     /** In-client API */
-    return { update: update };
+    return {
+      update: update,
+      getApprovals: getApprovals
+    };
   }
-]);angular.module('BitGo.API.AuditLogAPI', []).factory('AuditLogAPI', [
-  '$q',
-  '$location',
-  '$resource',
+]);/* istanbul ignore next */
+angular.module('BitGo.API.AuditLogAPI', []).factory('AuditLogAPI', [
   '$rootScope',
-  'UtilityService',
-  function ($q, $location, $resource, $rootScope, UtilityService) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+  'SDK',
+  function ($rootScope, SDK) {
     // Get the audit log based on scoping provided in the params
     function get(params) {
       if (!params || !params.enterpriseId || typeof params.skip !== 'number' || typeof params.limit !== 'number') {
         throw new Error('Invalid params');
       }
-      var resource = $resource(kApiServer + '/auditlog', {});
-      return resource.get(params).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doGet('/auditLog', params));
     }
     // In-client API
     return { get: get };
   }
 ]);angular.module('BitGo.API.EnterpriseAPI', []).factory('EnterpriseAPI', [
-  '$q',
   '$location',
-  '$resource',
   '$rootScope',
   'UtilityService',
   'CacheService',
   'EnterpriseModel',
   'NotifyService',
-  function ($q, $location, $resource, $rootScope, UtilityService, CacheService, EnterpriseModel, NotifyService) {
+  'SDK',
+  function ($location, $rootScope, UtilityService, CacheService, EnterpriseModel, NotifyService, SDK) {
     var DEFAULT_CACHED_ENTERPRISE_ID = 'personal';
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
     // Cache setup
     var enterpriseCache = new CacheService.Cache('localStorage', 'Enterprises', 120 * 60 * 1000);
     /**
@@ -2040,10 +2216,7 @@ angular.module('BitGo.API.ApprovalsAPI', []).factory('ApprovalsAPI', [
     }
     // Fetch all enterprises for the user
     function getAllEnterprises() {
-      var resource = $resource(kApiServer + '/enterprise', {});
-      return resource.get({}).$promise.then(function (data) {
-        // Array of enterprises returned
-        var enterprises = data.enterprises;
+      return SDK.wrap(SDK.doGet('/enterprise', {}, 'enterprises')).then(function (enterprises) {
         // Reset the rootScope enterprise list
         $rootScope.enterprises.all = {};
         // Create all 'real' enterprise objects
@@ -2063,22 +2236,38 @@ angular.module('BitGo.API.ApprovalsAPI', []).factory('ApprovalsAPI', [
             $rootScope.enterprises.current = enterprise;
           }
         });
+        //redirect to correct url incase url in enterprise is wrong. Do not redirect if 'enterprise is not present in url'
+        if (UtilityService.Url.getEnterpriseIdFromUrl() && UtilityService.Url.getEnterpriseIdFromUrl() !== $rootScope.enterprises.current.id) {
+          $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/' + UtilityService.Url.getEnterpriseSectionFromUrl());
+        }
         // Let listeners in the app know that the enterprise list was set
         $rootScope.$emit('EnterpriseAPI.CurrentEnterpriseSet', { enterprises: $rootScope.enterprises });
         return enterprises;
-      }, PromiseErrorHelper());
+      });
     }
     /**
     * Creates an enterprise inquiry for the marketing team
     * @param inquiry {Object} contains necessary params for the post
     * @private
     */
+    /* istanbul ignore next */
     function createInquiry(inquiry) {
       if (!inquiry) {
         throw new Error('invalid params');
       }
-      var resource = $resource(kApiServer + '/enterprise/inquiry', {});
-      return new resource.save(inquiry).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doPost('/enterprise/inquiry', inquiry));
+    }
+    /**
+    * Creates an enterprise
+    * @param params {Object} contains necessary stripe and enterprise data for creating an enterise
+    * @public
+    */
+    /* istanbul ignore next */
+    function addEnterprise(params) {
+      if (!params || !params.name || !params.supportPlan || !params.token) {
+        throw new Error('invalid params to add an enterprise');
+      }
+      return SDK.wrap(SDK.doPost('/enterprise', params));
     }
     /**
     * Sets the users on the current enterprise
@@ -2118,12 +2307,101 @@ angular.module('BitGo.API.ApprovalsAPI', []).factory('ApprovalsAPI', [
     * @private
     * @returns { Promise }
     */
+    /* istanbul ignore next */
     function getInfoByName(enterprise) {
       if (!enterprise) {
         throw new Error('missing enterprise');
       }
-      var resource = $resource(kApiServer + '/enterprise/name/' + enterprise, {});
-      return new resource.get({}).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doGet('/enterprise/name/' + enterprise));
+    }
+    /**
+    * Returns latest service version
+    * @public
+    * @returns { Promise }
+    */
+    /* istanbul ignore next */
+    function getServicesAgreementVersion() {
+      return SDK.wrap(SDK.doGet('/servicesAgreement'));
+    }
+    /**
+    * Updates an array of enterprises to the latest service agreement
+    * @public
+    * @param { enterpriseIds: [array of enterprise ids] } - object
+    * @returns { Promise }
+    */
+    /* istanbul ignore next */
+    function updateServicesAgreementVersion(params) {
+      if (!params || !params.enterpriseIds) {
+        throw new Error('Expected different parameters for updateServicesAgreementVersion');
+      }
+      return SDK.wrap(SDK.doPut('/enterprise/servicesAgreement', params));
+    }
+    /**
+    * Gets users on a particular enterprise
+    * @public
+    * @param { enterpriseId: enterprise id to get the users for } - object
+    * @returns { Promise }
+    */
+    /* istanbul ignore next */
+    function getEnterpriseUsers(params) {
+      if (!params || !params.enterpriseId) {
+        throw new Error('Expected different parameters for getEnterpriseUsers');
+      }
+      return SDK.wrap(SDK.doGet('/enterprise/' + params.enterpriseId + '/user', params));
+    }
+    /**
+    * Add admin to a particular enterprise
+    * @public
+    * @param { 
+        enterpriseId: enterprise id to get the users for
+        username: username of the user to be added
+      } 
+    * @returns { Promise }
+    */
+    /* istanbul ignore next */
+    function addEnterpriseAdmin(params) {
+      if (!params || !params.enterpriseId || !params.username) {
+        throw new Error('Expected different parameters for addEnterpriseAdmin');
+      }
+      return SDK.wrap(SDK.doPost('/enterprise/' + params.enterpriseId + '/user', { username: params.username }));
+    }
+    /**
+    * Update billing for a particular enterprise
+    * @public
+    * @param { 
+        enterpriseId: enterprise id to change the billing for
+        cardToken: 
+        userPlan:
+        supportPlan:
+      }
+    * Call needs to have atleast on of cardToken, userPlan, supportPlan values
+    * @returns { Promise }
+    */
+    /* istanbul ignore next */
+    function updateEnterpriseBilling(params) {
+      if (!params || !params.enterpriseId) {
+        throw new Error('Expected different parameters for addEnterpriseAdmin');
+      }
+      if (!params.cardToken && !params.userPlan && !params.supportPlan) {
+        throw new Error('Expected different parameters for addEnterpriseAdmin');
+      }
+      return SDK.wrap(SDK.doPut('/enterprise/' + params.enterpriseId + '/billing', params));
+    }
+    /**
+    * Remove admin from a particular enterprise
+    * @public
+    * @param { 
+        enterpriseId: enterprise id to get the users for
+        username: username of the user to be removed
+      } 
+    * @returns { Promise }
+    */
+    /* istanbul ignore next */
+    function removeEnterpriseAdmin(params) {
+      if (!params || !params.enterpriseId || !params.username) {
+        throw new Error('Expected different parameters for addEnterpriseAdmin');
+      }
+      return SDK.wrap(SDK.doDelete('/enterprise/' + params.enterpriseId + '/user', { username: params.username }));
     }
     // Event Handling
     $rootScope.$on('UserAPI.CurrentUserSet', function (evt, user) {
@@ -2160,10 +2438,56 @@ angular.module('BitGo.API.ApprovalsAPI', []).factory('ApprovalsAPI', [
     // In-client API
     return {
       getInfoByName: getInfoByName,
+      getServicesAgreementVersion: getServicesAgreementVersion,
+      updateServicesAgreementVersion: updateServicesAgreementVersion,
+      getEnterpriseUsers: getEnterpriseUsers,
+      addEnterpriseAdmin: addEnterpriseAdmin,
+      updateEnterpriseBilling: updateEnterpriseBilling,
+      removeEnterpriseAdmin: removeEnterpriseAdmin,
       getAllEnterprises: getAllEnterprises,
       setCurrentEnterprise: setCurrentEnterprise,
       getCurrentEnterprise: getCurrentEnterprise,
-      createInquiry: createInquiry
+      createInquiry: createInquiry,
+      addEnterprise: addEnterprise
+    };
+  }
+]);angular.module('BitGo.API.IdentityAPI', []).factory('IdentityAPI', [
+  '$rootScope',
+  'SDK',
+  function ($rootScope, SDK) {
+    /**
+     * Create a login with our KYC provider and return the oauth_key used
+     * to verify identity.
+     * @param identity {Object} - Include name, phone and finger strings
+     * @returns Promise returning oauth_key
+     */
+    function createIdentity(identity) {
+      return SDK.wrap(SDK.doPost('/identity/create', identity)).then(handleAPIErrors).then(function (res) {
+        return res.oauth_key;
+      });
+    }
+    /**
+     * Verify information submitted during identity verification process
+     * is valid and unique to the user
+     * @param oauth_key {String} - Returned from createIdentity API endpoint
+     * @returns return {Object} containing a boolean property called 'verified'
+     */
+    function verifyIdentity(oauth_key) {
+      return SDK.wrap(SDK.doPost('/identity/verify', { oauth_key: oauth_key })).then(handleAPIErrors).then(function (res) {
+        return res.verified;
+      });
+    }
+    function handleAPIErrors(res) {
+      if (res.error) {
+        var error = new Error(res.error);
+        error.retryTime = res.retryTime;
+        throw error;
+      }
+      return res;
+    }
+    return {
+      createIdentity: createIdentity,
+      verifyIdentity: verifyIdentity
     };
   }
 ]);/**
@@ -2172,20 +2496,16 @@ angular.module('BitGo.API.ApprovalsAPI', []).factory('ApprovalsAPI', [
  * @description
  * This manages app API requests for listing jobs through the BitGo website
  */
+/* istanbul ignore next */
 angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
-  '$resource',
-  'UtilityService',
-  function ($resource, UtilityService) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+  'SDK',
+  function (SDK) {
     /**
     * List the jobs posted on the workable website
     * @private
     */
     function list() {
-      var resource = $resource(kApiServer + '/jobs', {});
-      return new resource.get({}).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doGet('/jobs'));
     }
     // Client API
     return { list: list };
@@ -2193,22 +2513,23 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
 ]);angular.module('BitGo.API.KeychainsAPI', []).factory('KeychainsAPI', [
   '$q',
   '$location',
-  '$resource',
   '$rootScope',
   'UtilityService',
   'UserAPI',
-  function ($q, $location, $resource, $rootScope, Utils, UserAPI) {
-    var kApiServer = Utils.API.apiServer;
-    var PromiseSuccessHelper = Utils.API.promiseSuccessHelper;
+  'SDK',
+  function ($q, $location, $rootScope, Utils, UserAPI, SDK) {
     var PromiseErrorHelper = Utils.API.promiseErrorHelper;
     // Helper: generates a new BIP32 keychain to use
     function generateKey() {
-      // Generate the entropy for the keychain's seed
-      var randomBytes = new Array(256);
-      new Bitcoin.SecureRandom().nextBytes(randomBytes);
-      var seed = Bitcoin.Util.bytesToHex(randomBytes);
-      // create a new BIP32 object from the random seed
-      return new Bitcoin.BIP32().initFromSeed(seed);
+      var keyData = SDK.get().keychains().create();
+      return SDK.bitcoin.HDNode.fromBase58(keyData.xprv);
+    }
+    /* istanbul ignore next */
+    function getColdKey(secret) {
+      if (typeof secret !== 'string') {
+        throw Error('illegal argument');
+      }
+      return SDK.wrap(SDK.doGet('/coldkey/' + secret));
     }
     // Creates keychains on the BitGo server
     function createKeychain(data) {
@@ -2217,21 +2538,21 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
       // the passcode used to encrypt the xprv
       var passcode = data.passcode;
       // the BIP32 extended key used to create a keychain when a user wants to use their own backup
-      var extendedKey = data.extendedKey;
+      var hdNode = data.hdNode;
       var saveEncryptedXprv = data.saveEncryptedXprv;
       // If the user doesn't provide a key, generate one
-      if (!extendedKey) {
-        extendedKey = generateKey();
+      if (!hdNode) {
+        hdNode = generateKey();
       }
       // Each saved keychain object has these properties
       var keychainData = {
           source: data.source,
-          xpub: extendedKey.extended_public_key_string()
+          xpub: hdNode.neutered().toBase58()
         };
       // If we're storing the encryptedXprv, include this with the request
       if (saveEncryptedXprv) {
         // The encrypted xprv; encrypted with the wallet's passcode
-        keychainData.encryptedXprv = Utils.Crypto.sjclEncrypt(passcode, extendedKey.extended_private_key_string());
+        keychainData.encryptedXprv = SDK.encrypt(passcode, hdNode.toBase58());
         // And a code that is used to encrypt the user's wallet passcode (the 'passcode' referenced in this function)
         // This code is only ever used to encrypt the original passcode for this keychain,
         // and is used only for recovery purposes with the original encrypted xprv blob.
@@ -2243,17 +2564,16 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
       function onCreateSuccess(data) {
         // For backup purposes: We'll decorate the returned keychain object
         // with the xprv and encryptedXprv so we can access them in the app
-        if (extendedKey.has_private_key) {
-          data.xprv = extendedKey.extended_private_key_string();
+        if (hdNode.privKey) {
+          data.xprv = hdNode.toBase58();
           if (!data.encryptedXprv) {
-            data.encryptedXprv = Utils.Crypto.sjclEncrypt(passcode, data.xprv);
+            data.encryptedXprv = SDK.encrypt(passcode, data.xprv);
           }
         }
         return data;
       }
       // Return the promise
-      var resource = $resource(kApiServer + '/keychain', {});
-      return new resource(keychainData).$save({}).then(function (data) {
+      return $q.when(SDK.get().keychains().add(keychainData)).then(function (data) {
         return onCreateSuccess(data);
       }, function (error) {
         // 301 means we tried adding a keychain that already exists
@@ -2265,29 +2585,32 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
       });
     }
     // Create and return the new BitGo keychain
+    /* istanbul ignore next */
     function createBitGoKeychain() {
-      var resource = $resource(kApiServer + '/keychain/bitgo', {});
-      return new resource({}).$save({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.get().keychains().createBitGo());
+    }
+    /**
+     * Create and return a new backup keychain from a backup provider
+     * @param {string} the name of the provider to create the xpub from
+     * @returns {Obj} new backup keychain with krs xpub
+     */
+    /* istanbul ignore next */
+    function createBackupKeychain(provider) {
+      return SDK.wrap(SDK.get().keychains().createBackup({ provider: provider }));
     }
     // Get a specific BitGo keychain
+    /* istanbul ignore next */
     function get(xpub) {
-      if (typeof xpub !== 'string') {
-        throw new Error('illegal argument');
-      }
-      var keychainsResource = $resource(kApiServer + '/keychain/' + xpub, {});
-      return new keychainsResource().$save({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.get().keychains().get({ xpub: xpub }));
     }
     /**
      * Update a bitgo keychain
      * @param {Obj} bitgo keychain object to update
      * @returns {Obj} updated bitgo keychain
      */
-    function update(keychainData) {
-      if (typeof keychainData.xpub !== 'string' || typeof keychainData.encryptedXprv !== 'string') {
-        throw new Error('illegal argument');
-      }
-      var resource = $resource(kApiServer + '/keychain/' + keychainData.xpub, {}, { update: { method: 'PUT' } });
-      return new resource(keychainData).$update({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+    /* istanbul ignore next */
+    function update(params) {
+      return SDK.wrap(SDK.get().keychains().update(params));
     }
     // In-client API
     return {
@@ -2295,20 +2618,17 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
       update: update,
       createKeychain: createKeychain,
       createBitGoKeychain: createBitGoKeychain,
-      generateKey: generateKey
+      createBackupKeychain: createBackupKeychain,
+      generateKey: generateKey,
+      getColdKey: getColdKey
     };
   }
 ]);angular.module('BitGo.API.LabelsAPI', []).factory('LabelsAPI', [
-  '$q',
   '$location',
-  '$resource',
   '$rootScope',
-  'UtilityService',
   'CacheService',
-  function ($q, $location, $resource, $rootScope, UtilityService, CacheService) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+  'SDK',
+  function ($location, $rootScope, CacheService, SDK) {
     // simple in-memory cache
     var labelsCache = {};
     /**
@@ -2383,12 +2703,15 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
       labelsCache[label.address] = entry;
     }
     // Add a label to an address for a wallet
+    /* istanbul ignore next */
     function add(params) {
-      var resource = $resource(kApiServer + '/labels/' + params.walletId + '/' + params.address, {}, { 'save': { method: 'PUT' } });
-      return new resource.save({ label: params.label }).$promise.then(function (data) {
+      return SDK.wrap(SDK.get().newWalletObject({ id: params.walletId }).setLabel({
+        address: params.address,
+        label: params.label
+      })).then(function (data) {
         addLabelToCache(data);
         return data;
-      }, PromiseErrorHelper());
+      });
     }
     /**
      * Delete a label for an address in a wallet
@@ -2397,35 +2720,26 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
      * @public
      */
     function remove(params) {
-      if (!params.walletId || !params.address) {
-        return;
-      }
-      var resource = $resource(kApiServer + '/labels/' + params.walletId + '/' + params.address, {});
-      return new resource({}).$delete().then(function (data) {
+      return SDK.wrap(SDK.get().newWalletObject({ id: params.walletId }).deleteLabel({ address: params.address })).then(function (data) {
         removeLabelFromCache(data);
         return data;
-      }, PromiseErrorHelper());
+      });
     }
-    // Return a list of labeled addresses associated with a wallet
+    // Return a list of labeled addresses across all wallets
     function list() {
       // Cache was already loaded - return it
       if (!_.isEmpty(labelsCache)) {
-        return $q.when(labelsCache);
+        return SDK.wrap(labelsCache);
       }
-      var resource = $resource(kApiServer + '/labels/', {});
-      return resource.get({}).$promise.then(function (data) {
+      return SDK.wrap(SDK.doGet('/labels')).then(function (data) {
         _.forEach(data.labels, function (label) {
           addLabelToCache(label);
         });
         return labelsCache;
-      }, PromiseErrorHelper());
+      });
     }
     // Return a label for an address hopefully scoped by wallet
     function get(address, walletId) {
-      if (!walletId || !address) {
-        console.log('Missing get address arguments');
-        return $q.reject();
-      }
       return list().then(function () {
         var cacheEntry = labelsCache[address];
         if (!cacheEntry || cacheEntry.length === 0) {
@@ -2469,16 +2783,13 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
     };
   }
 ]);angular.module('BitGo.API.MarketDataAPI', ['ngResource']).factory('MarketDataAPI', [
-  '$resource',
   '$http',
   '$rootScope',
   'BG_DEV',
   'UtilityService',
   'CacheService',
-  function ($resource, $http, $rootScope, BG_DEV, Utils, CacheService) {
-    var kApiServer = Utils.API.apiServer;
-    var PromiseSuccessHelper = Utils.API.promiseSuccessHelper;
-    var PromiseErrorHelper = Utils.API.promiseErrorHelper;
+  'SDK',
+  function ($http, $rootScope, BG_DEV, Utils, CacheService, SDK) {
     var validators = Utils.Validators;
     var currencyCache = new CacheService.Cache('localStorage', 'Currency', 60 * 60 * 1000);
     var symbolMap = {
@@ -2490,6 +2801,8 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
         'USD': '$',
         'ZAR': 'R'
       };
+    // Flag to check if market data is available throughout the app
+    $rootScope.marketDataAvailable = true;
     // Listen for when the root user is set on the app,
     // update the app's currency to reflect their settings
     $rootScope.$on('UserAPI.CurrentUserSet', function () {
@@ -2521,39 +2834,27 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
     });
     // Blockchain Data Setters
     function setMarketCapData() {
-      try {
-        var cap = $rootScope.currency.data.current.last * $rootScope.blockchainData.blockchain.totalbc;
-        $rootScope.blockchainData.marketcap = cap;
-      } catch (error) {
-        console.log('Error setting market cap data', error);
-      }
+      var cap = $rootScope.currency.data.current.last * $rootScope.blockchainData.blockchain.totalbc;
+      $rootScope.blockchainData.marketcap = cap;
     }
     function setBlockchainData() {
-      try {
-        $rootScope.blockchainData = {
-          blockchain: currencyCache.storage.get('blockchain'),
-          updateTime: currencyCache.storage.get('updateTime')
-        };
-      } catch (error) {
-        console.log('Error setting blockchain data', error);
-      }
+      $rootScope.blockchainData = {
+        blockchain: currencyCache.storage.get('blockchain'),
+        updateTime: currencyCache.storage.get('updateTime')
+      };
     }
     // Financial Data Setter
     function setFinancialData() {
       var currency = getAppCurrency();
-      try {
-        $rootScope.currency = {
-          currency: currency,
-          bitcoinUnit: getBitcoinUnit(),
-          symbol: symbolMap[currency],
-          data: {
-            current: currencyCache.get('current')[currency],
-            previous: currencyCache.get('previous')[currency]
-          }
-        };
-      } catch (error) {
-        console.log('Error setting app financial data', error);
-      }
+      $rootScope.currency = {
+        currency: currency,
+        bitcoinUnit: getBitcoinUnit(),
+        symbol: symbolMap[currency],
+        data: {
+          current: currencyCache.get('current')[currency],
+          previous: currencyCache.get('previous')[currency]
+        }
+      };
     }
     // bitcoinUnit setter/getter
     function getBitcoinUnit() {
@@ -2579,10 +2880,16 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
       }
       currencyCache.add('currency', currency);
       // update the app's financial data with the new currency
-      setFinancialData();
-      setBlockchainData();
-      setMarketCapData();
-      $rootScope.$emit('MarketDataAPI.AppCurrencyUpdated', $rootScope.currency);
+      try {
+        setFinancialData();
+        setBlockchainData();
+        setMarketCapData();
+        $rootScope.marketDataAvailable = true;
+        $rootScope.$emit('MarketDataAPI.AppCurrencyUpdated', $rootScope.currency);
+      } catch (error) {
+        console.log('error setting market data' + error);
+        $rootScope.marketDataAvailable = false;
+      }
     }
     // CurrencyCache Setter
     function setCurrencyCache(data) {
@@ -2613,15 +2920,14 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
     init();
     return {
       latest: function () {
-        var resource = $resource(kApiServer + '/market/latest', {});
-        return resource.get({}).$promise.then(function (result) {
+        return SDK.wrap(SDK.get().market()).then(function (result) {
           if (!_.isEmpty(result.latest.currencies)) {
             var currency = getAppCurrency();
             setCurrencyCache(result);
             setInAppMarketData(currency);
             return $rootScope.currency;
           }
-        }, PromiseErrorHelper());
+        });
       },
       price: function (range, currency) {
         if (!range) {
@@ -2629,11 +2935,7 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
         } else if (!currency) {
           throw new Error('Need currency when getting market data');
         }
-        var resource = $resource(kApiServer + '/market/last/:range/:currency', {
-            range: range,
-            currency: currency
-          });
-        return resource.query({}).$promise.then(function (results) {
+        return SDK.wrap(SDK.doGet('/market/last/' + range + '/' + currency)).then(function (results) {
           var prices = [];
           var max = 0;
           var min = results[0][1];
@@ -2653,18 +2955,318 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
             max: max,
             min: min
           };
-        }, PromiseErrorHelper());
+        });
       }
     };
   }
-]);angular.module('BitGo.API.PolicyAPI', []).factory('PolicyAPI', [
-  '$resource',
+]);/**
+ * @ngdoc service
+ * @name matchwalletAPI
+ * @description
+ * Manages interactions with the matchwallet API endpoints and setting
+ * related variables on $rootScope
+ */
+angular.module('BitGo.API.MatchwalletAPI', []).factory('MatchwalletAPI', [
+  '$q',
+  '$location',
   '$rootScope',
+  '$injector',
+  'WalletsAPI',
+  'EnterpriseAPI',
+  'MatchwalletModel',
+  'NotifyService',
   'UtilityService',
-  function ($resource, $rootScope, UtilityService) {
-    var kApiServer = UtilityService.API.apiServer;
+  'CacheService',
+  'featureFlags',
+  'SDK',
+  'BG_DEV',
+  function ($q, $location, $rootScope, $injector, WalletsAPI, EnterpriseAPI, MatchwalletModel, Notify, UtilityService, CacheService, featureFlags, SDK, BG_DEV) {
+    // fetch helpers
     var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
     var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+    // Cache setup
+    var matchwalletCache = CacheService.getCache('matchwallets') || new CacheService.Cache('localStorage', 'matchwallets', 120 * 60 * 1000);
+    // The user's invitation, if they have one
+    $rootScope.invitation = null;
+    /**
+     * True if the user has unclaimed invitation gift.
+     */
+    function invitationGiftPending() {
+      return $rootScope.invitation && !$rootScope.invitation.accepted && !$rootScope.invitation.rejected && !$rootScope.invitation.giftWalletId;
+    }
+    /**
+     * @returns True if the user can send invites
+     */
+    function canSendInvites() {
+      if (!$rootScope.invitation && !featureFlags.isOn('employee')) {
+        return false;
+      }
+      if (!$rootScope.matchwallets || _.isEmpty($rootScope.matchwallets.all)) {
+        return true;
+      }
+      var matchwallet = _.findLast($rootScope.matchwallets.all);
+      return matchwallet.data.balance >= BG_DEV.MATCHWALLET.MIN_INVITATION_AMOUNT && matchwallet.data.balance > BG_DEV.TX.MINIMUM_BTC_DUST;
+    }
+    /**
+     * Create Matchwallet API endpoint helper
+     * @returns new matchwallet object
+     * @private
+     */
+    function createMatchwallet() {
+      return SDK.wrap(SDK.doPost('/matchwallet/create')).then(function (matchwallet) {
+        matchwallet = new MatchwalletModel.Matchwallet(matchwallet);
+        // update the cache and rootScope wallets object
+        matchwalletCache.add(matchwallet.data.id, matchwallet);
+        $rootScope.matchwallets.all[matchwallet.data.id] = matchwallet;
+        return matchwallet;
+      });
+    }
+    /**
+      * initializes empty match wallet objects for the app / service
+      * @private
+      */
+    function initEmptyMatchwallets() {
+      $rootScope.matchwallets = {
+        all: {},
+        current: null
+      };
+    }
+    /**
+      * Clears all user match wallets from the match wallet cache
+      * @private
+      */
+    function clearMatchwalletCache() {
+      _.forIn($rootScope.matchwallets.all, function (matchwallet) {
+        matchwalletCache.remove(matchwallet.data.id);
+        console.assert(_.isUndefined(matchwalletCache.get(matchwallet.data.id)), matchwallet.data.id + ' was not removed from matchwalletCache');
+      });
+      initEmptyMatchwallets();
+    }
+    /**
+      * Sets the new current matchwallet object on rootScope
+      * @param matchwallet {Object} BitGo Matchwallet object
+      * @param swapCurrentWallet {Bool} swap the current Matchwallet for the new one
+      * @private
+      */
+    function setCurrentMatchwallet(matchwallet, swapCurrentMatchwallet) {
+      if (!matchwallet) {
+        throw new Error('Expect a wallet when setting the current wallet');
+      }
+      if (_.isEmpty($rootScope.matchwallets.all)) {
+        throw new Error('Missing $rootScope.matchwallets.all');
+      }
+      var newCurrentMatchwallet = $rootScope.matchwallets.all[matchwallet.data.id];
+      if (!newCurrentMatchwallet) {
+        throw new Error('Matchwallet ' + matchwallet.data.id + ' not found when setting the current wallet');
+      }
+      // If we're swapping out the current wallet on rootScope
+      if (swapCurrentMatchwallet) {
+        $rootScope.matchwallets.all[matchwallet.data.id] = matchwallet;
+        newCurrentMatchwallet = matchwallet;
+      }
+      // Set the new current matchwallet
+      $rootScope.matchwallets.current = newCurrentMatchwallet;
+      // Broadcast the new event and go to the wallet's transaction list page
+      var url = $location.path().split('/');
+      var curWalletIdx = _.indexOf(url, 'matchwallet') + 1;
+      if ($rootScope.matchwallets.current.data.id !== url[curWalletIdx]) {
+        // wallet transactions path
+        var path = '/matchwallet/' + $rootScope.matchwallets.current.data.id;
+        $location.path(path);
+      }
+    }
+    // Event Handlers
+    function setMatchwallets() {
+      var url = $location.path().split('/');
+      var curWalletIdx = _.indexOf(url, 'matchwallet') + 1;
+      var urlMatchwalletId = url[curWalletIdx];
+      var urlCurrentMatchwallet = $rootScope.matchwallets.all[urlMatchwalletId];
+      // handle wrong url by redirecting them to the dashboard
+      if (urlMatchwalletId && !urlCurrentMatchwallet) {
+        $location.path('/enterprise/personal/wallets');
+      }
+      if (urlMatchwalletId && urlCurrentMatchwallet) {
+        setCurrentMatchwallet(urlCurrentMatchwallet);
+      }
+      setRewardsApproval();
+    }
+    // Fetch the details for a single wallet based on params criteria
+    function getMatchwallet(params, cacheOnly) {
+      if (!params) {
+        throw new Error('Missing params for getting a wallet');
+      }
+      if (cacheOnly) {
+        var result = matchwalletCache.get(params.id);
+        return $q.when(result);
+      }
+      return SDK.wrap(SDK.doGet('/matchwallet/' + params.id)).then(function (matchwallet) {
+        matchwallet = new MatchwalletModel.Matchwallet(matchwallet);
+        // update the cache and rootScope wallets object
+        matchwalletCache.add(params.id, matchwallet);
+        $rootScope.matchwallets.all[matchwallet.data.id] = matchwallet;
+        return matchwallet;
+      });
+    }
+    // Fetch the details for a user's invitation
+    function fetchInvitation() {
+      if (!$rootScope.currentUser.settings.signupToken) {
+        return $q(function (resolve) {
+          resolve(null);
+        });
+      }
+      return SDK.wrap(SDK.doGet('/matchwallet/invitation')).catch(function (err) {
+        return null;
+      });
+    }
+    function emitMatchwalletsSetMessage() {
+      $rootScope.$emit('MatchwalletAPI.UserMatchwalletsSet', $rootScope.matchwallets.all);
+    }
+    // Fetch all match wallets for a user
+    function getAllMatchwallets(localMatchwalletsOnly) {
+      // Returns all wallets
+      if (localMatchwalletsOnly) {
+        return $rootScope.matchwallets.all;
+      }
+      return SDK.wrap(SDK.doGet('/matchwallet', { limit: 10 })).then(function (data) {
+        return $q.all(data.matchwallets.map(function (matchwallet) {
+          return getMatchwallet({ id: matchwallet.id }, false).then(function (matchwallet) {
+            $rootScope.matchwallets.all[matchwallet.data.id] = matchwallet;
+          }).catch(function (error) {
+            console.error(error);
+          });
+        })).then(function () {
+          setMatchwallets();
+          emitMatchwalletsSetMessage();
+          return $rootScope.matchwallets.all;
+        });
+      }).catch(PromiseErrorHelper());
+    }
+    /**
+     * Updates the match wallet settings
+     * @param {Object} params for the wallet. Contains wallet id and a new label or rewardWalletId
+     * @returns {Promise} with success/error
+     * @public
+     */
+    function updateMatchwallet(params) {
+      if (!params.id || !(params.label || params.rewardWalletId)) {
+        throw new Error('Invalid params');
+      }
+      return SDK.wrap(SDK.doPut('/matchwallet/' + params.id, params)).then(PromiseSuccessHelper(), PromiseErrorHelper());
+    }
+    /**
+     * Sends an invitation
+     * @params {Object} params for the invitation. Contains matchwallet id, email, amount and message
+     * @returns {Promise} with success/error
+     */
+    function sendInvitation(params) {
+      if (!params.id || !params.email || !params.amount) {
+        throw new Error('Invalid params');
+      }
+      return SDK.wrap(SDK.doPost('/matchwallet/' + params.id + '/send', params));
+    }
+    function setCurrentInvitation(invitation) {
+      $rootScope.invitation = invitation;
+      setRewardsApproval();
+      $rootScope.$emit('MatchwalletAPI.UserInvitationSet', invitation);
+    }
+    function getInvitation() {
+      return fetchInvitation().then(setCurrentInvitation);
+    }
+    // Fetch all wallets when the user signs in
+    $rootScope.$on('UserAPI.CurrentUserSet', function (evt, user) {
+      getAllMatchwallets();
+      getInvitation();
+    });
+    // Clear the wallet cache on user logoout
+    $rootScope.$on('UserAPI.UserLogoutEvent', function () {
+      clearMatchwalletCache();
+      delete $rootScope.invitation;
+    });
+    // Sets the "claim reward" approval on the personal enterprise
+    function setRewardsApproval() {
+      var personalEnterprise = _.find($rootScope.enterprises.all, { isPersonal: true });
+      if (personalEnterprise) {
+        var approvals = {};
+        if ($rootScope.invitation && !$rootScope.invitation.accepted && !$rootScope.invitation.rejected && !$rootScope.invitation.giftWalletId) {
+          approvals[$rootScope.invitation.id] = {
+            id: $rootScope.invitation.id,
+            enterprise: personalEnterprise.id,
+            createDate: $rootScope.invitation.createDate,
+            info: {
+              type: 'invitation',
+              gift: true,
+              invitation: $rootScope.invitation
+            },
+            state: 'pending'
+          };
+        }
+        if ($rootScope.matchwallets) {
+          _($rootScope.matchwallets.all).values().pluck('data').pluck('invitations').flatten().value().forEach(function (invitation) {
+            if (!invitation.accepted && !invitation.rejected && !invitation.rewardWalletId) {
+              approvals[invitation.id] = {
+                id: invitation.id,
+                enterprise: personalEnterprise.id,
+                createDate: invitation.createDate,
+                info: {
+                  type: 'invitation',
+                  reward: true,
+                  invitation: invitation
+                },
+                state: 'pending'
+              };
+            }
+          });
+        }
+        personalEnterprise.setApprovals(approvals);
+      }
+    }
+    function claimReward(invitation, rewardWalletId) {
+      if (!invitation || !rewardWalletId) {
+        throw new Error('Expcetd invitation and rewardWalletId');
+      }
+      invitation.accepted = true;
+      if (invitation === $rootScope.invitation) {
+        return SDK.wrap(SDK.doPost('/matchwallet/invitation/claim', { giftWalletId: rewardWalletId }));
+      }
+      return SDK.wrap(SDK.doPost('/matchwallet/invitation/' + invitation.id + '/claim', { rewardWalletId: rewardWalletId }));
+    }
+    function rejectReward(invitation) {
+      if (!invitation) {
+        throw new Error('Expcetd invitation');
+      }
+      invitation.rejected = true;
+      if (invitation === $rootScope.invitation) {
+        return SDK.wrap(SDK.doPost('/matchwallet/invitation/reject'));
+      }
+      return SDK.wrap(SDK.doPost('/matchwallet/invitation/' + invitation.id + '/reject'));
+    }
+    $rootScope.$on('EnterpriseAPI.CurrentEnterpriseSet', setRewardsApproval);
+    function init() {
+      initEmptyMatchwallets();
+    }
+    init();
+    // In-client API
+    return {
+      createMatchwallet: createMatchwallet,
+      getMatchwallet: getMatchwallet,
+      getAllMatchwallets: getAllMatchwallets,
+      getInvitation: getInvitation,
+      fetchInvitation: fetchInvitation,
+      setCurrentMatchwallet: setCurrentMatchwallet,
+      sendInvitation: sendInvitation,
+      updateMatchwallet: updateMatchwallet,
+      setCurrentInvitation: setCurrentInvitation,
+      claimReward: claimReward,
+      rejectReward: rejectReward,
+      invitationGiftPending: invitationGiftPending,
+      canSendInvites: canSendInvites
+    };
+  }
+]);/* istanbul ignore next */
+angular.module('BitGo.API.PolicyAPI', []).factory('PolicyAPI', [
+  '$rootScope',
+  'SDK',
+  function ($rootScope, SDK) {
     /**
     * Update a policy rule on specified wallet
     * @param params {Object} params for the the policy update
@@ -2674,8 +3276,8 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
       if (!params.rule || !params.bitcoinAddress) {
         throw new Error('invalid params');
       }
-      var resource = $resource(kApiServer + '/wallet/' + params.bitcoinAddress + '/policy/rule', {}, { 'save': { method: 'PUT' } });
-      return new resource.save(params.rule).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      console.log(JSON.stringify(params.rule, null, 2));
+      return SDK.wrap(SDK.get().newWalletObject({ id: params.bitcoinAddress }).updatePolicyRule(params.rule));
     }
     /**
     * Delete a policy rule on specified wallet
@@ -2686,8 +3288,7 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
       if (!params.id || !params.bitcoinAddress) {
         throw new Error('invalid params');
       }
-      var resource = $resource(kApiServer + '/wallet/' + params.bitcoinAddress + '/policy/rule', { id: params.id });
-      return new resource.delete().$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.get().newWalletObject({ id: params.bitcoinAddress }).deletePolicyRule({ id: params.id }));
     }
     // In-client API
     return {
@@ -2701,22 +3302,17 @@ angular.module('BitGo.API.JobsAPI', []).factory('JobsAPI', [
  * @description
  * Manages the http requests dealing with proof of reserves
  */
+/* istanbul ignore next */
 angular.module('BitGo.API.ProofsAPI', []).factory('ProofsAPI', [
-  '$q',
   '$location',
-  '$resource',
-  'UtilityService',
-  function ($q, $location, $resource, UtilityService) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+  'SDK',
+  function ($location, SDK) {
     /**
     * List all proofs
     * @private
     */
     function list() {
-      var resource = $resource(kApiServer + '/proof', {});
-      return new resource.get({}).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doGet('/proof'));
     }
     /**
     * Get a patner's proof based on hash
@@ -2726,8 +3322,7 @@ angular.module('BitGo.API.ProofsAPI', []).factory('ProofsAPI', [
       if (!proofId) {
         throw new Error('missing proofId');
       }
-      var resource = $resource(kApiServer + '/proof/' + proofId, {});
-      return new resource.get({}).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doGet('/proof/' + proofId));
     }
     /**
     * Get a specific liability proof
@@ -2737,11 +3332,10 @@ angular.module('BitGo.API.ProofsAPI', []).factory('ProofsAPI', [
       if (!params.hash) {
         throw new Error('invalid params');
       }
-      var resource = $resource(kApiServer + '/proof/liability/' + params.hash, {});
-      return new resource.get({
-        user: params.userId,
+      return SDK.wrap(SDK.doGet('/proof/liability/' + params.hash, {
+        user: params.user,
         nonce: params.nonce
-      }).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      }));
     }
     /** In-client API */
     return {
@@ -2753,12 +3347,10 @@ angular.module('BitGo.API.ProofsAPI', []).factory('ProofsAPI', [
 ]);angular.module('BitGo.API.ReportsAPI', []).factory('ReportsAPI', [
   '$q',
   '$location',
-  '$resource',
   '$rootScope',
+  'SDK',
   'UtilityService',
-  function ($q, $location, $resource, $rootScope, UtilityService) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
+  function ($q, $location, $rootScope, SDK, UtilityService) {
     var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
     // local copy of the report range for all wallets
     var startDates = {};
@@ -2771,11 +3363,11 @@ angular.module('BitGo.API.ProofsAPI', []).factory('ProofsAPI', [
       if (typeof startDates[params.walletAddress] !== 'undefined') {
         return $q.when(startDates[params.walletAddress]);
       }
-      var resource = $resource(kApiServer + '/reports/' + params.walletAddress + '/startDate', {});
-      return new resource.get().$promise.then(function (result) {
+      // Don't use wrap here -- we'll catch in getAllWalletsReportRange
+      return $q.when(SDK.doGet('/reports/' + params.walletAddress + '/startDate', {}, 'startDate')).then(function (startDate) {
         // cache it
-        startDates[params.walletAddress] = result.startDate;
-        return result.startDate;
+        startDates[params.walletAddress] = startDate;
+        return startDate;
       });
     }
     /**
@@ -2846,9 +3438,9 @@ angular.module('BitGo.API.ProofsAPI', []).factory('ProofsAPI', [
       }, PromiseErrorHelper());
     }
     // Get a specific report (based on params) for a specific wallet
+    /* istanbul ignore next */
     function getReport(params) {
-      var resource = $resource(kApiServer + '/reports/' + params.walletAddress, {});
-      return new resource.get(params).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doGet('/reports/' + params.walletAddress, params));
     }
     function init() {
       ranges = {};
@@ -2860,71 +3452,513 @@ angular.module('BitGo.API.ProofsAPI', []).factory('ProofsAPI', [
       getReport: getReport
     };
   }
-]);angular.module('BitGo.API.SettingsAPI', []).factory('SettingsAPI', [
-  '$q',
+]);/* istanbul ignore next */
+angular.module('BitGo.API.SettingsAPI', []).factory('SettingsAPI', [
   '$location',
-  '$resource',
   '$rootScope',
-  'UtilityService',
-  function ($q, $location, $resource, $rootScope, UtilityService) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+  'SDK',
+  function ($location, $rootScope, SDK) {
     function assertAuth(data) {
       console.assert(_.has(data, 'token_type'), 'missing token_type');
       console.assert(_.has(data, 'access_token'), 'missing access_token');
       console.assert(_.has(data, 'expires_in'), 'missing expires_in');
     }
-    function assertSettings(data) {
-      console.assert(_.has(data, 'settings'), 'missing settings');
-      console.assert(_.has(data.settings, 'username'), 'missing settings.username');
-      console.assert(_.has(data.settings, 'name'), 'missing settings.name');
-      console.assert(_.has(data.settings.name, 'full'), 'missing settings.name.full');
-      console.assert(_.has(data.settings.name, 'first'), 'missing settings.name.first');
-      console.assert(_.has(data.settings.name, 'last'), 'missing settings.name.last');
-      console.assert(_.has(data.settings, 'email'), 'missing settings.email');
-      console.assert(_.has(data.settings.email, 'email'), 'missing settings.email.email');
-      console.assert(_.has(data.settings.email, 'verified'), 'missing settings.email.verified');
-      console.assert(_.has(data.settings, 'phone'), 'missing settings.phone');
-      console.assert(_.has(data.settings.phone, 'phone'), 'missing settings.phone.phone');
-      console.assert(_.has(data.settings.phone, 'verified'), 'missing settings.phone.verified');
-      console.assert(_.has(data.settings, 'notifications'), 'missing notifications');
-      console.assert(_.has(data.settings, 'isPrivateProfile'), 'missing isPrivateProfile');
-      console.assert(_.has(data.settings.notifications, 'via_email'), 'missing settings.notifications.via_email');
-      console.assert(_.has(data.settings.notifications, 'via_phone'), 'missing settings.notifications.via_phone');
-      console.assert(_.has(data.settings.notifications, 'on_send_btc'), 'missing settings.notifications.on_send_btc');
-      console.assert(_.has(data.settings.notifications, 'on_recv_btc'), 'missing settings.notifications.on_recv_btc');
-      console.assert(_.has(data.settings.notifications, 'on_message'), 'missing settings.notifications.on_message');
-      console.assert(_.has(data.settings.notifications, 'on_btc_change'), 'missing settings.notifications.on_btc_change');
-      console.assert(_.has(data.settings.notifications, 'on_follow'), 'missing settings.notifications.on_follow');
-      console.assert(_.has(data.settings.notifications, 'on_join'), 'missing settings.notifications.on_join');
-      console.assert(_.has(data.settings, 'digest'), 'missing digest');
-      console.assert(_.has(data.settings.digest, 'enabled'), 'missing settings.digest.enabled');
-      console.assert(_.has(data.settings.digest, 'intervalSeconds'), 'missing settings.digest.intervalSeconds');
+    function assertSettings(settings) {
+      console.assert(settings, 'missing settings');
+      console.assert(_.has(settings, 'username'), 'missing settings.username');
+      console.assert(_.has(settings, 'name'), 'missing settings.name');
+      console.assert(_.has(settings.name, 'full'), 'missing settings.name.full');
+      console.assert(_.has(settings.name, 'first'), 'missing settings.name.first');
+      console.assert(_.has(settings.name, 'last'), 'missing settings.name.last');
+      console.assert(_.has(settings, 'email'), 'missing settings.email');
+      console.assert(_.has(settings.email, 'email'), 'missing settings.email.email');
+      console.assert(_.has(settings.email, 'verified'), 'missing settings.email.verified');
+      console.assert(_.has(settings, 'notifications'), 'missing notifications');
+      console.assert(_.has(settings, 'isPrivateProfile'), 'missing isPrivateProfile');
+      console.assert(_.has(settings.notifications, 'via_email'), 'missing settings.notifications.via_email');
+      console.assert(_.has(settings.notifications, 'via_phone'), 'missing settings.notifications.via_phone');
+      console.assert(_.has(settings.notifications, 'on_send_btc'), 'missing settings.notifications.on_send_btc');
+      console.assert(_.has(settings.notifications, 'on_recv_btc'), 'missing settings.notifications.on_recv_btc');
+      console.assert(_.has(settings.notifications, 'on_message'), 'missing settings.notifications.on_message');
+      console.assert(_.has(settings.notifications, 'on_btc_change'), 'missing settings.notifications.on_btc_change');
+      console.assert(_.has(settings.notifications, 'on_follow'), 'missing settings.notifications.on_follow');
+      console.assert(_.has(settings.notifications, 'on_join'), 'missing settings.notifications.on_join');
+      console.assert(_.has(settings, 'digest'), 'missing digest');
+      console.assert(_.has(settings.digest, 'enabled'), 'missing settings.digest.enabled');
+      console.assert(_.has(settings.digest, 'intervalSeconds'), 'missing settings.digest.intervalSeconds');
+      return settings;
     }
     // In-client API
     return {
       get: function () {
-        var resource = $resource(kApiServer + '/user/settings', {});
-        return resource.get({}).$promise.then(function (response) {
-          assertSettings(response);
-          return response.settings;
-        }, PromiseErrorHelper());
+        return SDK.wrap(SDK.doGet('/user/settings', {}, 'settings').then(function (settings) {
+          return assertSettings(settings);
+        }));
       },
       save: function (params) {
         if (!params) {
           throw new Error('invalid params');
         }
-        var resource = $resource(kApiServer + '/user/settings', {}, { 'save': { method: 'PUT' } });
-        return new resource(params).$save({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+        return SDK.wrap(SDK.doPut('/user/settings', params));
       },
       savePhone: function (params) {
         if (!params) {
           throw new Error('invalid params');
         }
-        var resource = $resource(kApiServer + '/user/settings/phone', {});
-        return new resource(params).$save({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+        return SDK.wrap(SDK.doPost('/user/settings/phone', params));
       }
+    };
+  }
+]);/**
+ * @ngdoc service
+ * @name ssAPI
+ * @description
+ * This module is for managing all http requests for all ShapeShift API in the app
+ * Also contains other api related methods like a list of errors, get errors etc.
+ */
+angular.module('BitGo.API.ssAPI', []).factory('ssAPI', [
+  '$http',
+  '$q',
+  '$location',
+  '$resource',
+  '$rootScope',
+  'UtilityService',
+  'CacheService',
+  function ($http, $q, $location, $resource, $rootScope, UtilityService, CacheService) {
+    // Shapeshift API endpoint
+    var kApiServer = 'https://shapeshift.io/';
+    // simple in-memory
+    var coinsList = [];
+    /**  Shapeshift errors **/
+    var shiftErrors = {
+        unknownPair: {
+          err: 'Unknown pair',
+          msg: 'The selected address is temporarily unavailable for trades. Please try again later.'
+        },
+        invalidCoinType: {
+          err: 'Please enter a valid alt-coin address or change the currency symbol',
+          msg: 'Please enter a valid altCoin address or change the coin type'
+        },
+        invalidCoinAddress: {
+          err: 'Please enter a valid address',
+          msg: 'Please enter a valid address'
+        },
+        invalidReturnAddress: {
+          err: 'Warning: Return address appears to be invalid for the deposit coin type.(final)',
+          msg: 'Return address appears to be invalid for the deposit coin type. Please try again later.'
+        },
+        unavailableForTrades: {
+          err: 'That pair is temporarily unavailable for trades.',
+          msg: 'The selected address is temporarily unavailable for trades'
+        },
+        unableToContactAPI: {
+          err: 404,
+          msg: 'Unable to connect to ShapeShift. Please try again later.'
+        },
+        unableToGetSelectedCoin: {
+          err: 'unableToGetSelectedCoin',
+          msg: 'Please select a type of address to send bitcoins'
+        },
+        failedGetDepositAddress: {
+          err: 'Failed to get deposit address.',
+          msg: 'Unable to get deposit address from ShapeShift. Please try again later.'
+        },
+        shapeShiftWithdrawlAddress: {
+          err: 'Please enter an address belonging to an external wallet.',
+          msg: 'Please enter an address belonging to an external wallet.'
+        },
+        limitExceeded: {
+          err: 'limitExceeded',
+          msg: 'This transaction amount exceeds the ShapeShift limit'
+        },
+        underLimit: {
+          err: 'underLimit',
+          msg: 'This transaction amount is below the Shapeshift limit'
+        },
+        unableToGetDepositAddress: {
+          err: 'unableToGetDepositAddress',
+          msg: 'Unable to get deposit address from ShapeShift'
+        },
+        missingAltCoinName: {
+          err: 'missingAltCoinName',
+          msg: 'An error has occurred. Please try again later.'
+        },
+        invalidShiftParameters: {
+          err: 'invalidShiftParameters',
+          msg: 'An error has occurred. Please try again later.'
+        },
+        timeoutError: {
+          err: 0,
+          msg: 'Unable to process ShapeShift request. Please try again later.'
+        },
+        defaultError: {
+          err: 'defaultError',
+          msg: 'Unable to process ShapeShift request. Please try again later.'
+        }
+      };
+    var coinsImages = {
+        BTC: '/img/coins/bitcoin.png',
+        BLK: '/img/coins/blackcoin.png',
+        BITUSD: '/img/coins/bitusd.png',
+        BTS: '/img/coins/bitshares.png',
+        BTCD: '/img/coins/bitcoindark.png',
+        CLAM: '/img/coins/clams.png',
+        XCP: '/img/coins/counterparty.png',
+        DASH: '/img/coins/dash.png',
+        DGB: '/img/coins/digibyte.png',
+        DOGE: '/img/coins/dogecoin.png',
+        FTC: '/img/coins/feathercoin.png',
+        GEMZ: '/img/coins/gemz.png',
+        LTC: '/img/coins/litecoin.png',
+        MSC: '/img/coins/mastercoin.png',
+        MINT: '/img/coins/mintcoin.png',
+        MAID: '/img/coins/maidsafe.png',
+        XMR: '/img/coins/monero.png',
+        NMC: '/img/coins/namecoin.png',
+        NBT: '/img/coins/nubits.png',
+        NXT: '/img/coins/nxt.png',
+        NVC: '/img/coins/novacoin.png',
+        POT: '/img/coins/potcoin.png',
+        PPC: '/img/coins/peercoin.png',
+        QRK: '/img/coins/quark.png',
+        RDD: '/img/coins/reddcoin.png',
+        XRP: '/img/coins/ripple.png',
+        SDC: '/img/coins/shadowcash.png',
+        START: '/img/coins/startcoin.png',
+        SJCX: '/img/coins/storjcoinx.png',
+        SWARM: '/img/coins/swarm.png',
+        USDT: '/img/coins/tether.png',
+        UNO: '/img/coins/unobtanium.png',
+        VRC: '/img/coins/vericoin.png',
+        VTC: '/img/coins/vertcoin.png',
+        MONA: '/img/coins/monacoin.png',
+        IFC: '/img/coins/infinitecoin.png',
+        STR: '/img/coins/stellar.png',
+        FLO: '/img/coins/florincoin.png',
+        IOC: '/img/coins/iocoin.png',
+        NEOS: '/img/coins/neoscoin.png',
+        IXC: '/img/coins/ixcoin.png',
+        OPAL: '/img/coins/opal.png',
+        TRON: '/img/coins/positron.png',
+        ARCH: '/img/coins/arch.png',
+        DEFAULT: '/img/coins/default.png'
+      };
+    /**
+     * Set into the coinsList object the list of coins
+     * @param altCoins {Object} list of coins that comes from the ShapeShift API
+     * @private
+     */
+    function loadAltCoinList(altCoins) {
+      if (!altCoins) {
+        throw new Error('missing alt coins');
+      }
+      // Create an entry record for each avaiable coin
+      _.forIn(altCoins, function (altCoin) {
+        // It is a coin? It is available?
+        if (altCoin.status === 'available') {
+          coinsList.push(getCoinEntry(altCoin));
+        }
+      });
+    }
+    /**
+      This function sorts the list of coins based on the name
+      property
+      A-Z
+      @private
+    */
+    function sortCoins() {
+      coinsList.sort(function (a, b) {
+        if (a.name < b.name) {
+          return -1;
+        }
+        if (a.name > b.name) {
+          return 1;
+        }
+        return 0;
+      });
+    }
+    /**
+      Creates a coin object, which is a representation of the coin but with extra attributes.
+      @param altCoin Shapeshift object of the coin
+      @returns {object}
+      @private
+    */
+    function getCoinEntry(altCoin) {
+      var entry = {
+          name: altCoin.name,
+          symbol: altCoin.symbol,
+          image: getCoinImage(altCoin.symbol),
+          status: altCoin.status,
+          rate: 0,
+          limit: 0,
+          min: 0,
+          minerFee: 0
+        };
+      return entry;
+    }
+    /**
+      Search in the memory coinsList a coin by name
+      @param name Name of the coin to Search
+      @returns {object} - coin from coin list
+      @private
+    */
+    function getByName(name) {
+      return _.find(coinsList, function (altCoin) {
+        return altCoin.name === name;
+      });
+    }
+    /**
+      There are two types of errors because of the design of the API
+      1. Is when something fail on the request eg. Calling a non existing endpoint,
+         this will cause the promise to fail, and the response will be on the format
+         { status: 000, statusText: 'Error XXX' }
+      2. The second escenario is when something fails internally, in this case
+         we are going to receive the response 200, but the json will be like:
+         { error: 'Unknown pair'}
+      3. This third one is a logic one, so an error caused by us on the process, eg:
+         We validate if the amount exceeds what ShapeShift supports, if exceed we throw an Error
+         that will be founded here.
+
+      So this function will look in the errors variable a match either for the status
+      or the error string, and will return an object that handle several escenarios.
+    
+    @param {object} error
+    @returns {object} - formatted error
+    @public
+    */
+    function getError(error) {
+      var err = error;
+      // Do we have an error ?
+      if (!_.isUndefined(err)) {
+        // Find and get the error
+        // It is on the message?
+        if (!_.isUndefined(error.message)) {
+          err = error.message;
+        } else if (!_.isUndefined(error.status)) {
+          err = error.status;
+        }
+        /**
+          Shapeshift does not have a standard way of telling the user that it is using
+          a address different than his chosing,
+          Eg:
+          Please enter a Bitshares registered account name or change the exchange type
+          Please enter a Litecoin address or change the exchange type
+        */
+        if (err.startsWith('Please enter') && (err.endsWith('or change the currency symbol') || err.endsWith('change the exchange type'))) {
+          shiftErrors.invalidCoinType.msg = err;
+          return shiftErrors.invalidCoinType;
+        }
+        return _.find(shiftErrors, function (shiftError) {
+          return shiftError.err === err;
+        });
+      } else {
+        return err;
+      }
+    }
+    /**
+      Request the list of coins to shapeshift api
+      url: shapeshift.io/getcoins
+      method: GET
+
+      Success Output:
+
+          {
+              "SYMBOL1" :
+                  {
+                      name: ["Currency Formal Name"],
+                      symbol: <"SYMBOL1">,
+                      image: ["https://shapeshift.io/images/coins/coinName.png"],
+                      status: [available / unavailable]
+                  }
+              (one listing per supported currency)
+          }
+
+      The status can be either "available" or "unavailable". Sometimes coins become temporarily unavailable during updates or
+      unexpected service issues.
+    */
+    function list() {
+      // Cache was already loaded - return it
+      if (!_.isEmpty(coinsList)) {
+        return $q.when(coinsList);
+      }
+      // Get the list  of coins from ShapeShift
+      var resource = $resource(kApiServer + 'getcoins/', {});
+      return resource.get({}).$promise.then(function (data) {
+        // Does Shapeshift return an error? :(
+        if (!_.isUndefined(data.error)) {
+          // Let's raise the exception to be handled on the catch block
+          throw new Error(data.error);
+        }
+        // Load the coins in our in-memory object array
+        loadAltCoinList(data);
+        // Sort the coins
+        sortCoins();
+        // Return the in=memory object array
+        return coinsList;
+      });
+    }
+    /**
+      This is the primary data input into ShapeShift
+      @public
+      @param: {
+        url:  shapeshift.io/shift
+        method: POST
+        data type: JSON
+        data required:
+        withdrawal     = the address for resulting coin to be sent to
+        pair           = what coins are being exchanged in the form [input coin]_[output coin]  ie btc_ltc
+        returnAddress  = (Optional) address to return deposit to if anything goes wrong with exchange
+        destTag        = (Optional) Destination tag that you want appended to a Ripple payment to you
+        rsAddress      = (Optional) For new NXT accounts to be funded, you supply this on NXT payment to you
+        apiKey         = (Optional) Your affiliate PUBLIC KEY, for volume tracking, affiliate payments, split-shifts, etc...
+      }
+      example data: {"withdrawal":"AAAAAAAAAAAAA", "pair":"btc_ltc", returnAddress:"BBBBBBBBBBB"}
+
+      Success Output:
+        {
+          deposit: [Deposit Address (or memo field if input coin is BTS / BITUSD)],
+          depositType: [Deposit Type (input coin symbol)],
+          withdrawal: [Withdrawal Address], //-- will match address submitted in post
+          withdrawalType: [Withdrawal Type (output coin symbol)],
+          public: [NXT RS-Address pubkey (if input coin is NXT)],
+          xrpDestTag : [xrpDestTag (if input coin is XRP)],
+          apiPubKey: [public API attached to this shift, if one was given]
+        }
+    */
+    function shift(params) {
+      // We require the name of the coin to exchange
+      if (_.isUndefined(params) || params === null) {
+        throw new Error('invalidShiftParameters');
+      }
+      // Make API call to shapeshift :)
+      var resource = $resource(kApiServer + 'shift/', {});
+      return resource.save(params).$promise;
+    }
+    /**
+      Create the params object to be passed to the shift endpoint call
+      @private
+      @param params: 
+      {
+        recipientAddress: withdrawal address / alt-coin address
+        symbol: alt-coin symbol
+      }
+      @return object which has valid parameters to be passed to the shapeshift api/shift method.
+      return {
+        pair:           'btc_' + params.symbol,
+        returnAddress:  Optional return address
+        withdrawal:     recipientAddress
+      }
+    */
+    function getShiftParams(params) {
+      // Required parameters
+      if (_.isUndefined(params.recipientAddress) || _.isUndefined(params.symbol)) {
+        throw new Error('invalidShiftParameters');
+      }
+      // Do we want to create an address to receive bitcoins?
+      if (!_.isUndefined(params.receive) && params.receive === true) {
+        return {
+          pair: params.symbol + '_btc',
+          withdrawal: params.recipientAddress
+        };
+      } else {
+        // Ohh right, we are going to send to an alternative address
+        return {
+          pair: 'btc_' + params.symbol,
+          returnAddress: params.returnAddress,
+          withdrawal: params.recipientAddress
+        };
+      }
+    }
+    /**
+    url: shapeshift.io/marketinfo/[pair]
+    method: GET
+
+    [pair] (OPTIONAL) is any valid coin pair such as btc_ltc or ltc_btc.
+    The pair is not required and if not specified will return an array of all market infos.
+
+    Success Output:
+      {
+        "pair"     : "btc_ltc",
+        "rate"     : 130.12345678,
+        "limit"    : 1.2345,
+        "min"      : 0.02621232,
+        "minerFee" : 0.0001
+      }
+
+      @param {string} name: Symbol of the altcoin
+      {boolean} receive: Whether we are sending or receiving altcoins
+    */
+    function getMarketInfo(name, receive) {
+      // We require the name of the coin to exchange, we supposed to never
+      // catch this error, if happens we have a bug :(
+      if (_.isUndefined(name) || name === null) {
+        throw new Error('missingAltCoinName');
+      }
+      // Get the alt coin loaded from cached
+      var altCoin = getByName(name);
+      // Pair is the symbol of two different coins
+      var pair = 'btc_' + altCoin.symbol;
+      // If we are receiving then the pair is alt_coin/btc
+      if (receive === true) {
+        pair = altCoin.symbol + '_btc';
+      }
+      // Get the market info from the shapeshift API,
+      // we will set the rate to the coin information and return the promise :)
+      var resource = $resource(kApiServer + 'marketinfo/' + pair, {});
+      return resource.get({}).$promise.then(function (data) {
+        // Does Shapeshift return an error? :(
+        if (!_.isUndefined(data.error)) {
+          // Let's raise the exception to be handled on the catch block
+          throw new Error(data.error);
+        }
+        // Let's finish fullfilling the alt coin object
+        altCoin.rate = data.rate;
+        altCoin.limit = data.limit;
+        altCoin.min = data.minimum;
+        altCoin.minerFee = data.minerFee;
+        return altCoin;
+      });
+    }
+    /*
+      function which gets the altcoin image string. If not present, return default image
+      @param {object} coin
+      @returns {string} - Source of the altcoin image
+      @public
+    */
+    function getCoinImage(coin) {
+      return _.isUndefined(coinsImages[coin]) ? coinsImages.DEFAULT : coinsImages[coin];
+    }
+    /*
+      function used to convert decimal to integer. Multiplies with 1e8
+      Used when doing arithmetic with altcoin rate
+      @param {Integer} 
+      @returns {Integer}
+      @public
+    */
+    function decimalToInteger(val) {
+      return parseInt(val * 100000000, 10);
+    }
+    /*
+      function used to convert integer to decimal. Divided with 1e8
+      Used when doing arithmetic.
+      @param {Integer} 
+      @returns {Integer}
+      @public
+    */
+    function integerToDecimal(val) {
+      return val / 100000000;
+    }
+    // In-client API
+    return {
+      list: list,
+      getMarketInfo: getMarketInfo,
+      getError: getError,
+      getByName: getByName,
+      getCoinImage: getCoinImage,
+      getShiftParams: getShiftParams,
+      shift: shift,
+      decimalToInteger: decimalToInteger,
+      integerToDecimal: integerToDecimal
     };
   }
 ]);/**
@@ -2933,65 +3967,52 @@ angular.module('BitGo.API.ProofsAPI', []).factory('ProofsAPI', [
  * @description
  * Manages the http requests dealing with server status/availability
  */
+/* istanbul ignore next */
 angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
-  '$resource',
-  'UtilityService',
-  function ($resource, UtilityService) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+  'SDK',
+  function (SDK) {
     /**
     * Check BitGo service status
     * @private
     */
     function ping() {
-      var resource = $resource(kApiServer + '/ping', {});
-      return new resource.get({}).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.get().ping());
     }
     /** In-client API */
     return { ping: ping };
   }
 ]);angular.module('BitGo.API.TransactionsAPI', []).factory('TransactionsAPI', [
-  '$q',
   '$location',
-  '$resource',
   '$rootScope',
-  'UtilityService',
   'WalletsAPI',
   'KeychainsAPI',
   'SDK',
   'BG_DEV',
-  function ($q, $location, $resource, $rootScope, UtilityService, WalletsAPI, KeychainsAPI, SDK, BG_DEV) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+  function ($location, $rootScope, WalletsAPI, KeychainsAPI, SDK, BG_DEV) {
     /**
       * List all historical txs for a wallet
       * @param {object} wallet object
       * @param {object} params for the tx query
       * @returns {array} promise with array of wallettx items
       */
+    /* istanbul ignore next */
     function list(wallet, params) {
       if (!wallet || !params) {
         throw new Error('Invalid params');
       }
-      var resource = $resource(kApiServer + '/wallet/:walletId/wallettx', {
-          walletId: wallet.data.id,
-          skip: params.skip || 0
-        });
-      return resource.get({}).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doGet('/wallet/' + wallet.data.id + '/wallettx', { skip: params.skip || 0 }));
     }
     /**
       * Get the tx history for a single wallettx item
       * @param {string} wallettx id
       * @returns {object} promise with the updated wallettx obj
       */
+    /* istanbul ignore next */
     function getTxHistory(walletTxId) {
       if (!walletTxId) {
         throw new Error('Invalid params');
       }
-      var resource = $resource(kApiServer + '/wallettx/' + walletTxId, {});
-      return resource.get({}).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doGet('/wallettx/' + walletTxId));
     }
     /**
       * Update a commment on a wallettx item
@@ -3000,25 +4021,12 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
       * @param {string} new comment for the transaction
       * @returns {object} promise with the updated wallettx obj
       */
+    /* istanbul ignore next */
     function updateComment(walletId, walletTxId, comment) {
       if (!walletId || !walletTxId || typeof comment === 'undefined') {
         throw new Error('Invalid params');
       }
-      var resource = $resource(kApiServer + '/wallettx/:walletTxId/comment', {
-          walletId: walletId,
-          walletTxId: walletTxId
-        });
-      return resource.save({ comment: comment }).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
-    }
-    // Send a transaction to the BitGo servers
-    function post(transaction) {
-      var resource = $resource(kApiServer + '/tx/send', {});
-      return new resource(transaction).$save({});
-    }
-    // Get the list of unspents for a wallet
-    function getUTXO(bitcoinAddress, target) {
-      var resource = $resource(kApiServer + '/wallet/' + bitcoinAddress + '/unspents', { target: target });
-      return new resource.get({}).$promise;
+      return SDK.wrap(SDK.doPost('/wallettx/' + walletTxId + '/comment', { comment: comment }));
     }
     // In-client API
     return {
@@ -3030,28 +4038,41 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
 ]);angular.module('BitGo.API.UserAPI', ['ngResource']).factory('UserAPI', [
   '$location',
   '$q',
-  '$resource',
   '$rootScope',
+  'featureFlags',
   'UserModel',
   'UtilityService',
   'SDK',
   'CacheService',
   'AnalyticsProxy',
   'BG_DEV',
-  function ($location, $q, $resource, $rootScope, UserModel, UtilityService, SDK, CacheService, AnalyticsProxy, BG_DEV) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
+  function ($location, $q, $rootScope, featureFlags, UserModel, UtilityService, SDK, CacheService, AnalyticsProxy, BG_DEV) {
     var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
     // Cache setup
     var tokenCache = new CacheService.Cache('sessionStorage', 'Tokens');
+    var featureCache = new CacheService.Cache('sessionStorage', 'Features');
     // flag which is set for every user when they login. It tracks whether an email has been sent out for verification
     // incase the user has an unverified email
     var emailVerificationCache = new CacheService.Cache('sessionStorage', 'emailVerification');
     var userCache = new CacheService.Cache('localStorage', 'Users', 60 * 60 * 1000);
     var currentUser;
+    function endSession() {
+      // emit a message so that all wallets/walletshares can be cleared out
+      $rootScope.$emit('UserAPI.UserLogoutEvent');
+      // Track the successful logout
+      AnalyticsProxy.track('Logout');
+      AnalyticsProxy.shutdown();
+      clearCurrentUser();
+      $location.path('/login');
+    }
+    // When detecting an expired token, end the user's session
+    $rootScope.$on('UtilityService.InvalidToken', function (evt, data) {
+      endSession();
+    });
     function setPlaceholderUser() {
       currentUser = $rootScope.currentUser = new UserModel.PlaceholderUser();
     }
+    /* istanbul ignore next */
     function assertAuth(data) {
       console.assert(_.has(data, 'token_type'), 'missing token_type');
       console.assert(_.has(data, 'access_token'), 'missing access_token');
@@ -3061,30 +4082,27 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
       * asserts if received data has necessary properties required for fetching other users
       * @param {object} The data received from the server when fetching another user
       */
-    function assertGeneralBitgoUserProperties(data) {
-      console.assert(_.has(data, 'user'), 'missing user');
-      console.assert(_.has(data.user, 'id'), 'missing user.id');
-      console.assert(_.has(data.user, 'name'), 'missing user.name');
-      console.assert(_.has(data.user.name, 'full'), 'missing user.name.full');
-      console.assert(_.has(data.user, 'email'), 'missing user.email');
-      console.assert(_.has(data.user.email, 'email'), 'missing user.email.email');
+    /* istanbul ignore next */
+    function assertGeneralBitgoUserProperties(user) {
+      console.assert(user, 'missing user');
+      console.assert(_.has(user, 'id'), 'missing user.id');
+      console.assert(_.has(user, 'email'), 'missing user.email');
+      console.assert(_.has(user.email, 'email'), 'missing user.email.email');
     }
     /**
       * asserts if received data has necessary properties required for the main user
       * @param {object} The data received from the server for the main user
       */
-    function assertCurrentUserProperties(data) {
-      console.assert(_.has(data, 'user'), 'missing user');
-      console.assert(_.has(data.user, 'id'), 'missing user.id');
-      console.assert(_.has(data.user, 'username'), 'missing user.username');
-      console.assert(_.has(data.user, 'name'), 'missing user.name');
-      console.assert(_.has(data.user, 'email'), 'missing user.email');
-      console.assert(_.has(data.user.email, 'email'), 'missing user.email.email');
-      console.assert(_.has(data.user.email, 'verified'), 'missing user.email.verified');
-      console.assert(_.has(data.user, 'phone'), 'missing user.phone');
-      console.assert(_.has(data.user.phone, 'phone'), 'missing user.phone.phone');
-      console.assert(_.has(data.user.phone, 'verified'), 'missing user.phone.verified');
-      console.assert(_.has(data.user, 'isActive'), 'missing user.isActive');
+    /* istanbul ignore next */
+    function assertCurrentUserProperties(user) {
+      console.assert(user, 'missing user');
+      console.assert(_.has(user, 'id'), 'missing user.id');
+      console.assert(_.has(user, 'username'), 'missing user.username');
+      console.assert(_.has(user, 'name'), 'missing user.name');
+      console.assert(_.has(user, 'email'), 'missing user.email');
+      console.assert(_.has(user.email, 'email'), 'missing user.email.email');
+      console.assert(_.has(user.email, 'verified'), 'missing user.email.verified');
+      console.assert(_.has(user, 'isActive'), 'missing user.isActive');
     }
     function setAuthToken(token) {
       tokenCache.add('token', token);
@@ -3099,11 +4117,30 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
     function clearEmailVerificationToken() {
       emailVerificationCache.remove('canSend');
     }
+    function handleVerification(user) {
+      var state;
+      if (user.email && !user.email.verified) {
+        state = 'needsEmailVerify';
+      }
+      if (state) {
+        // scrub url before setting a new verification link
+        UtilityService.Url.scrubQueryString('device');
+        UtilityService.Url.scrubQueryString('email');
+        $location.path('/login').search(state, true);
+        return false;
+      }
+      return true;
+    }
     function setCurrentUser(user) {
       if (user) {
+        var hasAccess = handleVerification(user);
         // Set up the app's user
         currentUser = $rootScope.currentUser = new UserModel.User(true, user);
+        currentUser.setProperty({ hasAccess: hasAccess });
         Raven.setUser({ id: currentUser.settings.id });
+        if (featureCache.get('features')) {
+          featureFlags.set(featureCache.get('features'));
+        }
         // Emit signal to set initial app state for the user
         $rootScope.$emit('UserAPI.CurrentUserSet');
       } else {
@@ -3118,6 +4155,7 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
     */
     function clearCurrentUser() {
       SDK.delete();
+      featureCache.remove('features');
       if (currentUser.loggedIn) {
         clearAuthToken();
         clearEmailVerificationToken();
@@ -3131,28 +4169,23 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
     }
     init();
     // In-client API
+    /* istanbul ignore sendOTP */
     return {
       init: function () {
         var self = this;
-        var deferred = $q.defer();
         // If we have a token stored, then we should be able to use the API
         // already.  Attempt to get the current user.
-        if (tokenCache.get('token')) {
-          return self.me().then(function (user) {
-            return currentUser;
-          });
-        } else {
-          deferred.reject('no token');
+        if (!tokenCache.get('token')) {
+          return $q.reject('no token');
         }
-        return deferred.promise;
+        return self.me();
       },
       me: function () {
-        var resource = $resource(kApiServer + '/user/me', {});
-        return resource.get({}).$promise.then(function (data) {
-          assertCurrentUserProperties(data);
-          setCurrentUser(data.user);
+        return SDK.wrap(SDK.get().me()).then(function (user) {
+          assertCurrentUserProperties(user);
+          setCurrentUser(user);
           return currentUser;
-        }, PromiseErrorHelper());
+        });
       },
       get: function (userId, useCache) {
         if (!userId) {
@@ -3166,13 +4199,12 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
           }
         }
         // Otherwise perform the fetch and add the user to the cache
-        var resource = $resource(kApiServer + '/user/' + userId, {});
-        return resource.get({}).$promise.then(function (data) {
-          assertGeneralBitgoUserProperties(data);
-          var decoratedUser = new UserModel.User(false, data.user);
+        return SDK.wrap(SDK.get().getUser({ id: userId })).then(function (user) {
+          assertGeneralBitgoUserProperties(user);
+          var decoratedUser = new UserModel.User(false, user);
           userCache.add(userId, decoratedUser);
           return decoratedUser;
-        }, PromiseErrorHelper());
+        });
       },
       login: function (params) {
         // Wipe an existing user's token if a new user signs
@@ -3184,16 +4216,17 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
         }
         // Flag for the new client - need email to be verified first
         params.isNewClient = true;
-        return $q.when(SDK.get().authenticate({
+        return SDK.wrap(SDK.get().authenticate({
           username: params.email,
           password: params.password,
-          otp: params.otp
+          otp: params.otp,
+          trust: !!params.trust
         })).then(function (data) {
           // be sure to save the sdk to cache so that we aren't logged out
           // upon browser refresh
           SDK.save();
           assertAuth(data);
-          assertCurrentUserProperties(data);
+          assertCurrentUserProperties(data.user);
           setAuthToken(data.access_token);
           // By default 'canSendEmail' is set to true
           setEmailVerificationToken(true);
@@ -3206,52 +4239,57 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
           // Track the successful login
           AnalyticsProxy.track('Login');
           return currentUser;
-        }, PromiseErrorHelper());
+        }).then(function () {
+          return SDK.doGet('/user/gatekeeper');
+        }).then(function (result) {
+          var features = _.map(result, function (v, k) {
+              return {
+                key: k,
+                active: v
+              };
+            });
+          featureCache.add('features', features);
+          featureFlags.set(features);
+          return currentUser;
+        });
       },
       signup: function (params) {
         // Wipe an existing user's token if a new user signs
         // up without logging out of the current user's account
         clearCurrentUser();
-        // TODO: Add support for signup in the SDK
-        var resource = $resource(kApiServer + '/user/signup');
-        return new resource(params).$save({}).then(function (data) {
+        return SDK.wrap(SDK.doPost('/user/signup', params, 'user')).then(function (user) {
           // Mixpanel Tracking
-          AnalyticsProxy.registerUser(data.user.userID);
+          AnalyticsProxy.registerUser(user.userID);
           // Track the successful signup
           AnalyticsProxy.track('Signup');
-          return data.user;
-        }, PromiseErrorHelper());
+          return user;
+        });
       },
       getUserEncryptedData: function () {
-        var Resource = $resource(kApiServer + '/user/encrypted', {}, { post: { method: 'POST' } });
-        var getEncrypted = new Resource();
-        return getEncrypted.$post().then(PromiseSuccessHelper(), PromiseErrorHelper());
+        return SDK.wrap(SDK.doPost('/user/encrypted'));
       },
       resetPassword: function (params) {
         if (!params || !params.password || !params.email) {
           throw new Error('Invalid params');
         }
-        var Resource = $resource(kApiServer + '/user/resetpassword', {}, { post: { method: 'POST' } });
-        var reset = new Resource(params);
-        return reset.$post().then(PromiseSuccessHelper(), PromiseErrorHelper());
+        return SDK.wrap(SDK.doPost('/user/resetpassword', params));
       },
       verifyPassword: function (params) {
         if (!params.password) {
           throw new Error('Expect a password to verify');
         }
-        var resource = $resource(kApiServer + '/user/verifypassword', {}, { post: { method: 'POST' } });
-        return new resource(params).$post().then(function (data) {
-          if (!data.valid) {
-            // If invalid, return a needs passcode error
-            var error = new UtilityService.ErrorHelper({
-                status: 401,
-                data: { needsPasscode: true },
-                message: 'invalidPassword'
-              });
-            return $q.reject(error);
+        return SDK.wrap(SDK.get().verifyPassword(_.pick(params, ['password']))).then(function (valid) {
+          if (valid) {
+            return true;
           }
-          return data.valid;
-        }, PromiseErrorHelper());
+          // If invalid, return a needs passcode error
+          var error = new UtilityService.ErrorHelper({
+              status: 401,
+              data: { needsPasscode: true },
+              message: 'invalidPassword'
+            });
+          return $q.reject(error);
+        });
       },
       changePassword: function (params) {
         if (!params.password) {
@@ -3266,15 +4304,13 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
         if (!params.keychains) {
           throw new Error('Expect keychains');
         }
-        var resource = $resource(kApiServer + '/user/changepassword', {}, { post: { method: 'POST' } });
-        return new resource(params).$post().then(function (data) {
-          return data;
-        }, PromiseErrorHelper());
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.doPost('/user/changepassword', params));
       },
       logout: function () {
         $rootScope.$emit('UserAPI.UserLogoutEvent');
         // Regardless of success or fail, we want to clear user data
-        return $q.when(SDK.get().logout({})).then(function (result) {
+        return $q.when(SDK.get().logout()).then(function (result) {
           // Track the successful logout
           AnalyticsProxy.track('Logout');
           AnalyticsProxy.shutdown();
@@ -3298,48 +4334,47 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
           return error;
         });
       },
-      endSession: function () {
-        // emit a message so that all wallets/walletshares can be cleared out
-        $rootScope.$emit('UserAPI.UserLogoutEvent');
-        // Track the successful logout
-        AnalyticsProxy.track('Logout');
-        AnalyticsProxy.shutdown();
-        clearCurrentUser();
-        $location.path('/login');
-      },
+      endSession: endSession,
       unlock: function (params) {
-        var resource = $resource(kApiServer + '/user/unlock', {}, { post: { method: 'POST' } });
-        var unlockRequest = new resource(params);
-        return unlockRequest.$post({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.get().unlock(params));
       },
-      session: function (params) {
-        var resource = $resource(kApiServer + '/user/session', {});
-        return resource.get({}).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      session: function () {
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.get().session());
       },
-      create: function (params) {
-        var Resource = $resource(kApiServer + '/user/create', {}, { post: { method: 'POST' } });
-        var createRequest = new Resource(params);
-        return createRequest.$post({}).then(function (data) {
-          assertAuth(data);
-          assertCurrentUserProperties(data);
-          return data.user;
-        }, PromiseErrorHelper());
+      putClientCache: function (params) {
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.doPut('/user/clientCache', params));
       },
-      invite: function (params) {
-        var inviteRequest;
-        if (params.type == 'local') {
-          var LocalResource = $resource(kApiServer + '/user/invite', {}, { post: { method: 'POST' } });
-          inviteRequest = new LocalResource(params);
+      getClientCache: function () {
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.doGet('/user/clientCache'));
+      },
+      sendOTP: function (params) {
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.get().sendOTP(params));
+      },
+      newTOTP: function (onSuccess, onError) {
+        return SDK.wrap(SDK.doGet('/user/otp/totp'));
+      },
+      removeOTPDevice: function (params) {
+        if (!params.id) {
+          throw new Error('OTP ID Missing for removal');
         }
-        return inviteRequest.$post({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+        return SDK.wrap(SDK.doDelete('/user/otp/' + params.id, params));
       },
-      sendOTP: function (params, onSuccess, onError) {
-        var resource = $resource(kApiServer + '/user/sendotp', {}, { post: { method: 'POST' } });
-        return new resource(params).$post({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+      addOTPDevice: function (params) {
+        // Make sure a params object exists
+        if (!params) {
+          throw new Error('OTP params Missing');
+        }
+        if (params.type) {
+          return SDK.doPut('/user/otp', params);
+        }
       },
       verify: function (parameters) {
         var VALID_TYPES = [
-            'phone',
             'email',
             'forgotpassword'
           ];
@@ -3352,9 +4387,6 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
           throw new Error('Verify expects a valid verification type');
         }
         switch (parameters.type) {
-        case 'phone':
-          verifyUrl = '/user/verifyphone';
-          break;
         case 'email':
           verifyUrl = '/user/verifyemail';
           break;
@@ -3362,58 +4394,66 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
           verifyUrl = '/user/verifyforgotpassword';
           break;
         }
-        var resource = $resource(kApiServer + verifyUrl, parameters);
-        return resource.get({}).$promise.then(function (data) {
-          assertCurrentUserProperties(data);
-          return data.user;
-        }, PromiseErrorHelper());
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.doGet(verifyUrl, parameters, 'user')).then(function (user) {
+          assertCurrentUserProperties(user);
+          return user;
+        });
       },
       request: function (params) {
         // Flag for the new client - need email link to be to new client
         // TODO: remove once migrated
         params.isNewClient = true;
-        var resource = $resource(kApiServer + '/user/requestverification');
-        return new resource(params).$save({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+        return SDK.wrap(SDK.doPost('/user/requestverification', params));
       },
       forgotpassword: function (params) {
-        var resource = $resource(kApiServer + '/user/forgotpassword');
-        return new resource(params).$save({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.doPost('/user/forgotpassword', params));
       },
       sharingkey: function (params) {
-        if (!params.email) {
-          throw new Error('Expect email of person to share');
-        }
-        var resource = $resource(kApiServer + '/user/sharingkey');
-        return new resource(params).$save({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.get().getSharingKey(params));
       },
       deactivate: function (params) {
-        var resource = $resource(kApiServer + '/user/deactivate', {}, { post: { method: 'POST' } });
-        var createRequest = new resource(params);
-        return createRequest.$post({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.doPost('/user/deactivate', params));
       },
       payment: function (paymentParams, subscriptionsParams) {
         if (!paymentParams.token || !subscriptionsParams.planId) {
           throw new Error('Invalid parameters for payment');
         }
-        var resource = $resource(kApiServer + '/user/payments');
-        return new resource(paymentParams).$save({}).then(function (data) {
-          var resource = $resource(kApiServer + '/user/subscriptions');
-          return new resource(subscriptionsParams).$save({});
-        }).then(PromiseSuccessHelper(), PromiseErrorHelper());
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.doPost('/user/payments', paymentParams)).then(function (data) {
+          return SDK.doPost('/user/subscriptions', subscriptionsParams);
+        }).catch(PromiseErrorHelper());
+      },
+      modifyPaymentMethod: function (paymentParams) {
+        if (!paymentParams.paymentId || !paymentParams.fingerprint || !paymentParams.type) {
+          throw new Error('Missing payment information');
+        }
+        if (paymentParams.type !== BG_DEV.BILLING.MODIFICATION_TYPE.add && paymentParams.type !== BG_DEV.BILLING.MODIFICATION_TYPE.remove) {
+          throw new Error('Invalid payment information');
+        }
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.doPut('/user/payments/' + paymentParams.paymentId, paymentParams));
+      },
+      createSubscription: function (params) {
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.doPost('/user/subscriptions', params));
       },
       changeSubscription: function (params, subscriptionId) {
         if (!params.planId || !subscriptionId) {
           throw new Error('Invalid parameters to change subscription');
         }
-        var resource = $resource(kApiServer + '/user/subscriptions/' + subscriptionId, {}, { update: { method: 'PUT' } });
-        return new resource(params).$update({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.doPut('/user/subscriptions/' + subscriptionId, params));
       },
       deleteSubscription: function (subscriptionId) {
         if (!subscriptionId) {
           throw new Error('Invalid parameters to change subscription');
         }
-        var resource = $resource(kApiServer + '/user/subscriptions/' + subscriptionId, {});
-        return new resource({}).$delete().then(PromiseSuccessHelper(), PromiseErrorHelper());
+        /* istanbul ignore next */
+        return SDK.wrap(SDK.doDelete('/user/subscriptions/' + subscriptionId));
       }
     };
   }
@@ -3425,21 +4465,15 @@ angular.module('BitGo.API.StatusAPI', []).factory('StatusAPI', [
  * Also manages which wallet shares to show based on the current enterprise
  */
 angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
-  '$q',
   '$location',
-  '$resource',
   '$rootScope',
   'WalletModel',
   'NotifyService',
-  'UtilityService',
   'CacheService',
   'LabelsAPI',
   'UserAPI',
-  function ($q, $location, $resource, $rootScope, WalletModel, Notify, UtilityService, CacheService, LabelsAPI, UserAPI) {
-    // $http fetch helpers
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+  'SDK',
+  function ($location, $rootScope, WalletModel, Notify, CacheService, LabelsAPI, UserAPI, SDK) {
     // local copy of all wallet shares that exist for a given user
     var allWalletShares;
     /**
@@ -3536,8 +4570,7 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
      * @public
      */
     function getAllSharedWallets() {
-      var resource = $resource(kApiServer + '/walletshare', {});
-      return resource.get({}).$promise.then(function (data) {
+      return SDK.wrap(SDK.get().wallets().listShares()).then(function (data) {
         // Reset the local and rootscope wallet share list
         initEmptyWallets();
         // set incoming wallet shares on allWalletShares list
@@ -3549,7 +4582,7 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
           allWalletShares.outgoing[outgoingWalletShare.id] = outgoingWalletShare;
         });
         setFilteredWalletShares();
-      }, PromiseErrorHelper());
+      });
     }
     /**
      * @description
@@ -3558,14 +4591,12 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
      * @returns {promise} - with data regarding the wallet share from the server
      * @public
      */
+    /* istanbul ignore next */
     function getSharedWallet(params) {
-      if (!params.shareId) {
+      if (!params.walletShareId) {
         throw new Error('Invalid data when getting a wallet share');
       }
-      var resource = $resource(kApiServer + '/walletshare/' + params.shareId);
-      return resource.get({}).$promise.then(function (wallet) {
-        return wallet;
-      });
+      return SDK.wrap(SDK.get().wallets().getShare(params));
     }
     /**
      * create a wallet share with another user
@@ -3573,12 +4604,12 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
      * @param {object} params containing details of both users and keychain info for shared wallet
      * @returns {object} promise with data for the shared wallet
      */
+    /* istanbul ignore next */
     function createShare(walletId, params) {
       if (!walletId || !params) {
         throw new Error('Invalid data when creating a wallet share');
       }
-      var resource = $resource(kApiServer + '/wallet/' + walletId + '/share', {});
-      return new resource(params).$save({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.get().newWalletObject({ id: walletId }).createShare(params));
     }
     /**
      * Request a reshare of a wallet from admins on the wallet (just an email + setting a bit for now)
@@ -3587,36 +4618,30 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
      * @param   {Object} params    params (none)
      * @returns {Promise}
      */
+    /* istanbul ignore next */
     function requestReshare(walletId, params) {
       if (!walletId || !params) {
         throw new Error('Invalid data when requesting a reshare');
       }
-      var resource = $resource(kApiServer + '/wallet/' + walletId + '/requestreshare', {});
-      return new resource(params).$save({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doPost('/wallet/' + walletId + '/requestreshare', params));
     }
     /**
      * update a wallet share (either reject or save)
      * @param {object} params with data containing id and state(rejected or accepted)
      * @returns {object} promise with data from the updated share
      */
+    /* istanbul ignore next */
     function updateShare(params) {
-      if (!params) {
-        throw new Error('Invalid data when updating share');
-      }
-      var resource = $resource(kApiServer + '/walletshare/' + params.shareId, {});
-      return new resource(params).$save({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.get().wallets().updateShare(params));
     }
     /**
      * update a wallet share (either reject or save)
      * @param {object} params with data containing id and state(rejected or accepted)
      * @returns {object} promise with data from the updated share
      */
+    /* istanbul ignore next */
     function cancelShare(params) {
-      if (!params) {
-        throw new Error('Invalid data when cancelling wallet share');
-      }
-      var resource = $resource(kApiServer + '/walletshare/' + params.shareId, {});
-      return new resource(params).$remove({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.get().wallets().cancelShare(params));
     }
     /**
      * resend a wallet share email - for when you have already tried to share a
@@ -3626,12 +4651,12 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
      * @param {object} params with data containing id
      * @returns {object} promise with object saying whether the share was resent
      */
+    /* istanbul ignore next */
     function resendEmail(params) {
-      if (!params) {
+      if (!params.walletShareId) {
         throw new Error('Invalid data when resending wallet share');
       }
-      var resource = $resource(kApiServer + '/walletshare/' + params.shareId + '/resendemail', {});
-      return new resource(params).$save({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doPost('/walletshare/' + params.walletShareId + '/resendemail', params));
     }
     function init() {
       initEmptyWallets();
@@ -3651,18 +4676,14 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
 ]);angular.module('BitGo.API.WalletsAPI', []).factory('WalletsAPI', [
   '$q',
   '$location',
-  '$resource',
   '$rootScope',
   'WalletModel',
   'NotifyService',
   'UtilityService',
   'CacheService',
   'LabelsAPI',
-  function ($q, $location, $resource, $rootScope, WalletModel, Notify, UtilityService, CacheService, LabelsAPI) {
-    // $http fetch helpers
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+  'SDK',
+  function ($q, $location, $rootScope, WalletModel, Notify, UtilityService, CacheService, LabelsAPI, SDK) {
     // local copy of all wallets that exist for a given user
     var allWallets;
     // Cache setup
@@ -3747,16 +4768,32 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
         $rootScope.wallets.all = getNormalEnterpriseWallets(allWallets, currentEnterprise);
       }
     }
+    /**
+      * Get all approvals given an array of wallets
+      * @param list of wallets {Object}
+      * @returns list of pending approvals on the wallet{Array}
+      * @private
+      */
+    function getApprovals(wallets) {
+      var allWalletsApprovals = [];
+      if (wallets) {
+        allWalletsApprovals = _(wallets).pluck('data').pluck('pendingApprovals').filter().flatten().value();
+      }
+      return allWalletsApprovals;
+    }
     function setAllEnterpriseApprovals() {
       if (!$rootScope.enterprises.all) {
         console.log('Cannot set approvals on enterprises without a enterprises');
         return false;
       }
       _.forIn($rootScope.enterprises.all, function (enterprise) {
+        var approvals = [];
         if (enterprise && enterprise.isPersonal) {
-          enterprise.setApprovals(getPersonalEnterpriseWallets(allWallets));
+          approvals = getApprovals(getPersonalEnterpriseWallets(allWallets));
+          enterprise.setApprovals(approvals);
         } else {
-          enterprise.setApprovals(getNormalEnterpriseWallets(allWallets, enterprise));
+          approvals = getApprovals(getNormalEnterpriseWallets(allWallets, enterprise));
+          enterprise.setApprovals(approvals);
         }
       });
     }
@@ -3768,6 +4805,10 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
       LabelsAPI.initCache();
       var urlWalletId = UtilityService.Url.getWalletIdFromUrl();
       var urlCurrentWallet = $rootScope.wallets.all[urlWalletId];
+      // handle wrong url by redirecting them to the dashboard. Create wallet is exception
+      if (urlWalletId && !urlCurrentWallet && urlWalletId !== 'create') {
+        $location.path('/enterprise/personal/wallets');
+      }
       if (urlWalletId && urlCurrentWallet) {
         setCurrentWallet(urlCurrentWallet);
       }
@@ -3798,9 +4839,11 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
       if (params.gpk) {
         query.gpk = 1;
       }
-      var resource = $resource(kApiServer + '/wallet/' + params.bitcoinAddress);
-      return resource.get(query).$promise.then(function (wallet) {
-        wallet = new WalletModel.Wallet(wallet);
+      return SDK.wrap(SDK.get().wallets().getWallet({
+        id: params.bitcoinAddress,
+        gpk: params.gpk ? 1 : undefined
+      })).then(function (wallet) {
+        wallet = new WalletModel.Wallet(wallet.wallet);
         // update the cache and rootScope wallets object
         walletCache.add(params.bitcoinAddress, wallet);
         allWallets[wallet.data.id] = wallet;
@@ -3820,8 +4863,7 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
       if (localWalletsOnly) {
         return allWallets;
       }
-      var resource = $resource(kApiServer + '/wallet?limit=500', {});
-      return resource.get({}).$promise.then(function (data) {
+      return SDK.wrap(SDK.get().wallets().list({ limit: 500 })).then(function (data) {
         var pendingFetches = data.wallets.length;
         function onFetchFinished() {
           setFilteredWallets();
@@ -3851,7 +4893,7 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
           // Fetch each single wallet
           // Note: use native 'for in' loop b/c we need to use 'continue'
           for (var idx = 0; idx < numWallets; idx++) {
-            var curWallet = data.wallets[idx];
+            var curWallet = data.wallets[idx].wallet;
             // Omit custodial accounts
             if (curWallet.custodialAccount) {
               pendingFetches--;
@@ -3867,7 +4909,7 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
           // User wallets are now set along with approvals. Even though they are empty
           emitWalletSetMessage();
         }
-      }, PromiseErrorHelper());
+      });
     }
     // Create a new BitGo safeHD wallet
     function createSafeHD(params) {
@@ -3896,12 +4938,13 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
           keychains: keychains,
           enterprise: safeId($rootScope.enterprises.current.id)
         };
-      var resource = $resource(kApiServer + '/wallet', {});
-      return new resource(walletData).$save({}).then(function (wallet) {
-        var decoratedWallet = new WalletModel.Wallet(wallet);
+      return SDK.wrap(SDK.get().wallets().add(walletData)).then(function (wallet) {
+        // TODO (ben): WalletModel.Wallet should be dealing with SDK wallet objects
+        // (or being entirely replaced by them, by having the SDK Wallet objects subsume their functionality)
+        var decoratedWallet = new WalletModel.Wallet(wallet.wallet);
         walletCache.add(decoratedWallet.data.id, decoratedWallet);
         return decoratedWallet;
-      }, PromiseErrorHelper());
+      });
     }
     /**
       * Create a new chain address for the wallet
@@ -3910,12 +4953,13 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
       * @param allowExisting {Bool} if true, allow re-use of existing, unused addresses
       * @returns {Promise}
       */
+    /* istanbul ignore next */
     function createChainAddress(bitcoinAddress, chain, allowExisting) {
-      if (!bitcoinAddress || !chain.toString() || !allowExisting.toString()) {
-        throw new Error('invalid params');
-      }
-      var resource = $resource(kApiServer + '/wallet/' + bitcoinAddress + '/address/' + chain, {});
-      return new resource({ allowExisting: allowExisting }).$save().then(PromiseSuccessHelper(), PromiseErrorHelper());
+      var wallet = walletCache.get(bitcoinAddress);
+      return SDK.wrap(SDK.get().newWalletObject(wallet.data).createAddress({
+        chain: chain,
+        allowExisting: allowExisting ? '1' : undefined
+      }));
     }
     /**
       * @description Revoke Access to a wallet for a particular user
@@ -3923,13 +4967,13 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
       * @param {String} The userId of the person to be revoked
       * @returns {promise} with success/error messages
     */
+    /* istanbul ignore next */
     function revokeAccess(bitcoinAddress, userId) {
       if (!bitcoinAddress || !userId) {
         throw new Error('Invalid params');
       }
       var params = { user: userId };
-      var resource = $resource(kApiServer + '/wallet/' + bitcoinAddress + '/policy/revoke', {});
-      return new resource(params).$save().then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doPost('/wallet/' + bitcoinAddress + '/policy/revoke', params));
     }
     /**
       * Create a new receive address for a wallet
@@ -3959,18 +5003,13 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
       * @param {object} params for the address list query
       * @returns {object} promise with data for address list fetch
       */
+    /* istanbul ignore next */
     function getAllAddresses(params) {
       if (!params.bitcoinAddress || !params.limit || !params.chain.toString()) {
         throw new Error('Invalid params');
       }
-      var resource = $resource(kApiServer + '/wallet/' + params.bitcoinAddress + '/addresses', {
-          limit: params.limit,
-          skip: params.skip || 0,
-          sort: params.sort || 1,
-          chain: params.chain || 0,
-          details: params.details || false
-        });
-      return resource.get({}).$promise.then(PromiseSuccessHelper(), PromiseErrorHelper());
+      params.sort = params.sort || 1;
+      return SDK.wrap(SDK.get().newWalletObject({ id: params.bitcoinAddress }).addresses(params));
     }
     /**
      * Returns info needed to recover a specific wallet
@@ -3978,12 +5017,12 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
      * @returns {Promise} with wallet recovery info
      * @public
      */
+    /* istanbul ignore next */
     function getWalletPasscodeRecoveryInfo(params) {
       if (!params.walletAddress) {
         throw new Error('Invalid params');
       }
-      var resource = $resource(kApiServer + '/wallet/' + params.walletAddress + '/passcoderecovery', {});
-      return new resource(params).$save({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doPost('/wallet/' + params.walletAddress + '/passcoderecovery'));
     }
     /**
      * Deletes a wallet
@@ -3991,19 +5030,18 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
      * @returns {Promise} with success/error
      * @public
      */
+    /* istanbul ignore next */
     function removeWallet(wallet) {
       if (!wallet) {
         throw new Error('Invalid params');
       }
       var params = { walletAddress: wallet.data.id };
-      var resource = $resource(kApiServer + '/wallet/' + wallet.data.id, {});
-      return new resource(params).$remove({}).then(function (data) {
-        // cleans up data before next wallets fetch
+      return SDK.wrap(SDK.get().newWalletObject({ id: wallet.data.id }).delete()).then(function () {
         wallet.data.pendingApprovals.forEach(function (pendingApproval) {
           $rootScope.enterprises.current.deleteApproval(pendingApproval.id);
         });
         removeWalletFromScope(wallet);
-      }, PromiseErrorHelper());
+      });
     }
     /**
      * Deletes a wallet form the client. Removes it from allWallets and rootscope
@@ -4023,12 +5061,12 @@ angular.module('BitGo.API.WalletSharesAPI', []).factory('WalletSharesAPI', [
      * @returns {Promise} with success/error
      * @public
      */
+    /* istanbul ignore next */
     function renameWallet(params) {
       if (!params.walletAddress || !params.label) {
         throw new Error('Invalid params');
       }
-      var resource = $resource(kApiServer + '/wallet/' + params.walletAddress, {}, { update: { method: 'PUT' } });
-      return new resource(params).$update({}).then(PromiseSuccessHelper(), PromiseErrorHelper());
+      return SDK.wrap(SDK.doPut('/wallet/' + params.walletAddress, params));
     }
     /**
      * Returns all wallets from the cache for recovery
@@ -4102,7 +5140,12 @@ angular.module('BitGo.App.InternalStateService', []).factory('InternalStateServi
             return '/settings';
           }
         },
-        'personal_settings:plans': {
+        'personal_settings:security': {
+          path: function () {
+            return '/settings';
+          }
+        },
+        'personal_settings:subscriptions': {
           path: function () {
             return '/settings';
           }
@@ -4233,11 +5276,35 @@ angular.module('BitGo.App.AppController', []).controller('AppController', [
       return $location.path() === pagePath;
     };
     /**
+     * Logic to show to settings icon at the top nav bar
+     * @public
+     */
+    $scope.canShowEnterpriseSettingsIcon = function () {
+      if ($rootScope.enterprises && $rootScope.enterprises.current) {
+        return $rootScope.enterprises.current.isAdmin && !$rootScope.enterprises.current.isPersonal && !Utils.Url.isAccountSettingsPage() && !Utils.Url.isCreateEnterprisePage();
+      }
+      return false;
+    };
+    /**
      * Logic to turn the top nav dropdown title blue if user is in settings
      * @public
      */
-    $scope.isSettingsSection = function () {
-      return $location.path().indexOf('settings') > -1;
+    $scope.isAccountSettingsSection = function () {
+      return Utils.Url.isAccountSettingsPage();
+    };
+    /**
+     * Logic to use when deciding if a url is enterprise settings
+     * @public
+     */
+    $scope.isEnterpriseSettingsSection = function () {
+      return Utils.Url.isEnterpriseSettingsPage();
+    };
+    /**
+     * Logic to turn the top nav dropdown title blue if user is create enterprise
+     * @public
+     */
+    $scope.isCreateEnterpriseSection = function () {
+      return Utils.Url.isCreateEnterprisePage();
     };
     /**
      * Logic to show active tile in the top level nav
@@ -4259,13 +5326,6 @@ angular.module('BitGo.App.AppController', []).controller('AppController', [
       if (!section) {
         throw new Error('missing top level nav section');
       }
-      // If section passed in is settings, determine if it is selected from the url. (This deals with global settings)
-      if (section === 'settings') {
-        if (Utils.Url.getEnterpriseIdFromUrl() === '') {
-          return true;
-        }
-        return false;
-      }
       // else check the check the enterprise from the url
       return Utils.Url.getEnterpriseIdFromUrl() === section;
     };
@@ -4275,6 +5335,13 @@ angular.module('BitGo.App.AppController', []).controller('AppController', [
      */
     $scope.goToGlobalSettings = function () {
       $location.path('/settings');
+    };
+    /**
+     * Go to the create enterprise section of the app
+     * @public
+     */
+    $scope.goToAddEnterprise = function () {
+      $location.path('/create-organization');
     };
     /**
      * Sign the user out of the app
@@ -4304,13 +5371,10 @@ angular.module('BitGo.App.AppController', []).controller('AppController', [
      * @param enterprise {Object} bitgo client enterprise object
      * @public
      */
-    $scope.goToEnterpriseSettings = function (event, enterprise) {
-      if (!event || !enterprise) {
+    $scope.goToEnterpriseSettings = function (enterprise) {
+      if (!enterprise) {
         throw new Error('missing args');
       }
-      // kill the event from propagating out to the 'goToEnterprise'
-      // handler on the parent div
-      event.stopPropagation();
       EnterpriseAPI.setCurrentEnterprise(enterprise);
       if (enterprise.isPersonal) {
         $location.path('personal/settings');
@@ -4409,7 +5473,12 @@ angular.module('BitGo.App.SyncService', []).factory('SyncService', [
   'EnterpriseAPI',
   'WalletsAPI',
   'WalletSharesAPI',
-  function ($rootScope, $timeout, EnterpriseAPI, WalletsAPI, WalletSharesAPI) {
+  '$location',
+  'NotifyService',
+  '$q',
+  'MatchwalletAPI',
+  'ApprovalsAPI',
+  function ($rootScope, $timeout, EnterpriseAPI, WalletsAPI, WalletSharesAPI, $location, Notify, $q, MatchwalletAPI, ApprovalsAPI) {
     // constant used to ensure we throttle the sync calls (if wanted)
     var SYNC_TIMEOUT;
     // global sync throttle timeout
@@ -4556,6 +5625,7 @@ angular.module('BitGo.Auth', [
   'BitGo.Auth.LoginFormDirective',
   'BitGo.Auth.SetPhoneFormDirective',
   'BitGo.Auth.TwoFactorFormDirective',
+  'BitGo.Auth.ServicesAgreementFormDirective',
   'BitGo.Auth.LogoutController',
   'BitGo.Auth.ResetPwController',
   'BitGo.Auth.ForgotPwController',
@@ -4663,9 +5733,11 @@ angular.module('BitGo.Auth.LoginController', []).controller('LoginController', [
     $scope.viewStates = [
       'login',
       'needsEmailVerify',
-      'setPhone',
+      'setOtpDevice',
       'verifyPhone',
-      'otp'
+      'otp',
+      'totpSetup',
+      'terms'
     ];
     // The initial view state; initialized later
     $scope.state = undefined;
@@ -4678,23 +5750,50 @@ angular.module('BitGo.Auth.LoginController', []).controller('LoginController', [
     // password/email fields in the middle of the login flow
     $scope.lockedPassword = null;
     $scope.lockedEmail = null;
+    $scope.trustMachine = false;
+    // list of enterprises which need to upgrade their service agreement version
+    $scope.enterprisesList = [];
+    $scope.setPostauth = function () {
+      // Priority 1: run any necessary post auth actions
+      if (PostAuthService.hasPostAuth()) {
+        return PostAuthService.runPostAuth();
+      }
+      // Priority 2: run any relevant required actions
+      if (RequiredActionService.hasAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW)) {
+        return RequiredActionService.runAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW);
+      }
+      // Priority 3: direct log in    
+      $location.path('/enterprise/' + EnterpriseAPI.getCurrentEnterprise() + '/wallets');
+    };
     var killUserLoginListener = $scope.$on('SignUserIn', function () {
-        // Priority 1: run any necessary post auth actions
-        if (PostAuthService.hasPostAuth()) {
-          return PostAuthService.runPostAuth();
+        // empty the enterprise list
+        $scope.enterprisesList = [];
+        if ($rootScope.currentUser.isEnterpriseCustomer()) {
+          return EnterpriseAPI.getServicesAgreementVersion().then(function (data) {
+            // check each enterprise the user is on, check the version
+            _.forEach($rootScope.currentUser.settings.enterprises, function (enterprise) {
+              // if the latest version is not present, don't do anything
+              if ($rootScope.enterprises.all[enterprise.id].latestSAVersionSigned === undefined) {
+                return;
+              }
+              if (data.version > $rootScope.enterprises.all[enterprise.id].latestSAVersionSigned) {
+                $scope.enterprisesList.push(enterprise.id);
+              }
+            });
+            // If there is any enterprise which needs to be updated
+            if ($scope.enterprisesList.length > 0) {
+              return $scope.$emit('SetState', 'terms');
+            }
+            $scope.setPostauth();
+          });
         }
-        // Priority 2: run any relevant required actions
-        if (RequiredActionService.hasAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW)) {
-          return RequiredActionService.runAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW);
-        }
-        // Priority 3: direct log in
-        $location.path('/enterprise/' + EnterpriseAPI.getCurrentEnterprise() + '/wallets');
+        $scope.setPostauth();
       });
     var killUserSetListener = $rootScope.$on('UserAPI.CurrentUserSet', function (evt, data) {
         // stores settings returned after creating ecdh key for user
         var newSettings;
         $scope.user = $rootScope.currentUser;
-        //check if user has ECDH keychain. If not, make it for him
+        //check if user has ECDH keychain. If not, make it for her/him
         if (!$rootScope.currentUser.settings.ecdhKeychain) {
           var params = {
               source: 'ecdh',
@@ -4729,7 +5828,8 @@ angular.module('BitGo.Auth.LoginController', []).controller('LoginController', [
           email: formattedEmail,
           password: safePassword,
           otp: $scope.otpCode,
-          forceSMS: !!forceSMS
+          forceSMS: !!forceSMS,
+          trust: $scope.trustMachine
         };
       return UserAPI.login(user);
     };
@@ -4748,7 +5848,7 @@ angular.module('BitGo.Auth.LoginController', []).controller('LoginController', [
     function getVerificationState() {
       var verificationStates = [
           'needsEmailVerify',
-          'setPhone',
+          'setOtpDevice',
           'verifyPhone'
         ];
       var result;
@@ -4796,7 +5896,8 @@ angular.module('BitGo.Auth.LoginController', []).controller('LoginController', [
   'RequiredActionService',
   'BG_DEV',
   'AnalyticsProxy',
-  function (Util, Notify, RequiredActionService, BG_DEV, AnalyticsProxy) {
+  'UserAPI',
+  function (Util, Notify, RequiredActionService, BG_DEV, AnalyticsProxy, UserAPI) {
     return {
       restrict: 'A',
       require: '^LoginController',
@@ -4856,15 +5957,24 @@ angular.module('BitGo.Auth.LoginController', []).controller('LoginController', [
             $scope.passwordStrength = passwordStrength;
           };
           function onLoginSuccess(user) {
-            if (user.emailNotVerified()) {
+            if (!$scope.user.settings.email.verified) {
               return $scope.$emit('SetState', 'needsEmailVerify');
             }
-            if (user.phoneNotSet()) {
-              return $scope.$emit('SetState', 'setPhone');
+            // check the OTP devices
+            if (user.settings.otpDevices.length) {
+              return $scope.$emit('SignUserIn');
             }
-            if (user.phoneNotVerified()) {
-              return $scope.$emit('SetState', 'verifyPhone');
-            }
+            UserAPI.getClientCache().then(function (cache) {
+              // if the verified user object has been returned and user
+              // needs OTP, set access to false
+              if (!cache.bypassSetOTP) {
+                // if the verified user object has been returned and user
+                // needs OTP, set access to false
+                $scope.user.hasAccess = false;
+                return $scope.$emit('SetState', 'setOtpDevice');
+              }
+              $scope.$emit('SignUserIn');
+            });
           }
           function onLoginFail(error) {
             if (error.needsOTP) {
@@ -4884,7 +5994,9 @@ angular.module('BitGo.Auth.LoginController', []).controller('LoginController', [
           }
           $scope.submitLogin = function () {
             // clear any errors
-            $scope.clearFormError();
+            if ($scope.clearFormError) {
+              $scope.clearFormError();
+            }
             fetchPreFilledFields();
             // handle the LastPass pw/email issues
             setLockedPassword();
@@ -4942,7 +6054,8 @@ angular.module('BitGo.Auth.LogoutController', []).controller('LogoutController',
   'UtilityService',
   'UserAPI',
   'BG_DEV',
-  function ($scope, $rootScope, $location, NotifyService, UtilityService, UserAPI, BG_DEV) {
+  'SDK',
+  function ($scope, $rootScope, $location, NotifyService, UtilityService, UserAPI, BG_DEV, SDK) {
     // Holds params relevant to resetting the user pw
     var resetParams;
     // object to handle the form data
@@ -5005,7 +6118,7 @@ angular.module('BitGo.Auth.LogoutController', []).controller('LogoutController',
             code: resetParams.code,
             email: resetParams.email,
             type: 'forgotpassword',
-            password: UtilityService.Crypto.sjclHmac(resetParams.email, $scope.form.password)
+            password: SDK.passwordHMAC(resetParams.email, $scope.form.password)
           };
         UserAPI.resetPassword(params).then(function () {
           NotifyService.success('Your password was successfully updated. Please log in to recover your wallets.');
@@ -5063,6 +6176,50 @@ angular.module('BitGo.Auth.LogoutController', []).controller('LogoutController',
     }
     init();
   }
+]);/**
+ * @ngdoc directive
+ * @name servicesAgreementForm
+ * @description
+ * This directive manages the form to agree to a new services agreement
+ * @example
+ *   <div services-agreement-form></div>
+ */
+angular.module('BitGo.Auth.ServicesAgreementFormDirective', []).directive('servicesAgreementForm', [
+  'EnterpriseAPI',
+  'NotifyService',
+  function (EnterpriseAPI, Notify) {
+    return {
+      restrict: 'A',
+      require: '^LoginController',
+      controller: [
+        '$scope',
+        function ($scope) {
+          // variable to keeps track of whether the user has agreed to the agreement
+          $scope.agreeToTerms = false;
+          // TODO: on service agreement updates, change the file this points to
+          $scope.ServicesAgreementSource = 'marketing/templates/services_agreement_v1.html';
+          /**
+         * Handles submit of services agreement form
+         * @public
+         */
+          $scope.submitTerms = function () {
+            // Clear any errors
+            $scope.clearFormError();
+            if ($scope.agreeToTerms) {
+              EnterpriseAPI.updateServicesAgreementVersion({ enterpriseIds: $scope.enterprisesList }).then($scope.setPostauth).catch(submitTermsFail);
+            } else {
+              $scope.setFormError('Please agree to the services agreement.');
+            }
+          };
+          function submitTermsFail() {
+            Notify.error('There was an error in updating the services agreement version. Please contact BitGo');
+            // Take them to the dashboard anyway
+            $scope.setPostauth();
+          }
+        }
+      ]
+    };
+  }
 ]);angular.module('BitGo.Auth.SetPhoneFormDirective', []).directive('setPhoneForm', [
   'UtilityService',
   'SettingsAPI',
@@ -5080,32 +6237,6 @@ angular.module('BitGo.Auth.LogoutController', []).controller('LogoutController',
           function formIsValid() {
             return Util.Validators.phoneOk($scope.user.settings.phone.phone);
           }
-          // Now request that an otp code be sent to the user's new (unverified) number
-          function onSetPhoneSuccess(user) {
-            // Track the phone set success
-            AnalyticsProxy.track('SetPhone');
-            var phone = $scope.user.settings.phone.phone;
-            if (phone) {
-              var params = { type: 'phone' };
-              UserAPI.request(params);
-            }
-            return $scope.$emit('SetState', 'verifyPhone');
-          }
-          /**
-         * Handle server fail when setting phone on login
-         * @param error {Object}
-         * @private
-         */
-          function onSetPhoneFail(error) {
-            Notify.error(error.error);
-            // Track the phone set server fail
-            var metricsData = {
-                status: error.status,
-                message: error.error,
-                action: 'Set Phone'
-              };
-            AnalyticsProxy.track('Error', metricsData);
-          }
           // Sets a new (unverified) phone number on the user
           // Note: as long as the phone number is not verified, we can set new phone
           // numbers on the user and sent otps to them -- but once verified, there
@@ -5114,10 +6245,13 @@ angular.module('BitGo.Auth.LogoutController', []).controller('LogoutController',
             // Clear any errors
             $scope.clearFormError();
             if (formIsValid()) {
-              var data = { settings: { phone: { phone: $scope.user.settings.phone.phone } } };
-              SettingsAPI.save(data).then(onSetPhoneSuccess).catch(onSetPhoneFail);
+              // Track the phone set success
+              AnalyticsProxy.track('SetPhone');
+              UserAPI.sendOTP({ phone: $scope.user.settings.phone.phone }).then(function () {
+                $scope.$emit('SetState', 'verifyPhone');
+              });
             } else {
-              $scope.setFormError('Please add a valid phone numer.');
+              $scope.setFormError('Please add a valid phone number.');
               // Track the phone set fail on the client
               var metricsData = {
                   status: 'client',
@@ -5174,13 +6308,16 @@ angular.module('BitGo.Auth.SignupController', []).controller('SignupController',
 ]);angular.module('BitGo.Auth.SignupFormDirective', []).directive('signupForm', [
   '$rootScope',
   '$timeout',
+  '$location',
+  '$routeParams',
   'UserAPI',
   'UtilityService',
   'NotifyService',
   'BG_DEV',
   'AnalyticsProxy',
   'AnalyticsUtilities',
-  function ($rootScope, $timeout, UserAPI, Util, Notify, BG_DEV, AnalyticsProxy, AnalyticsUtilities) {
+  'SDK',
+  function ($rootScope, $timeout, $location, $routeParams, UserAPI, Util, Notify, BG_DEV, AnalyticsProxy, AnalyticsUtilities, SDK) {
     return {
       restrict: 'A',
       require: '^SignupController',
@@ -5297,7 +6434,16 @@ angular.module('BitGo.Auth.SignupController', []).controller('SignupController',
          * @private
          */
           function signupSuccess(user) {
-            return $scope.$emit('SetState', 'confirmEmail');
+            if (!$routeParams.email || $routeParams.email != $scope.lockedEmail) {
+              return $scope.$emit('SetState', 'confirmEmail');
+            }
+            UserAPI.login({
+              email: user.username,
+              password: $scope.lockedPassword
+            }).then(function () {
+              $location.search('setOtpDevice', '1');
+              $location.path('/login');
+            });
           }
           /**
          * Signup server-fail handler
@@ -5327,14 +6473,25 @@ angular.module('BitGo.Auth.SignupController', []).controller('SignupController',
               var formattedEmail = Util.Formatters.email($scope.lockedEmail);
               var newUser = {
                   email: formattedEmail,
-                  password: Util.Crypto.sjclHmac(formattedEmail, $scope.lockedPassword)
+                  password: SDK.passwordHMAC(formattedEmail, $scope.lockedPassword)
                 };
+              if (typeof $routeParams.token !== 'undefined') {
+                newUser.token = $routeParams.token;
+              }
+              // if there's a referral going on and the utm source and campaign aren't empty, we wanna forward that
+              if ($routeParams.utm_medium === 'referral' && $routeParams.utm_source && $routeParams.utm_campaign) {
+                newUser.utm_campaign = $routeParams.utm_campaign;
+                newUser.utm_source = $routeParams.utm_source;
+              }
               UserAPI.signup(newUser).then(signupSuccess).catch(signupFail);
             }
           };
           function init() {
             // init an instance of the password time-to-complete tracker
             analyticsPasswordMonitor = new AnalyticsUtilities.time.PasswordCompletionMonitor();
+            if ($routeParams.email) {
+              $scope.user.settings.email.email = $routeParams.email;
+            }
           }
           init();
         }
@@ -5343,22 +6500,187 @@ angular.module('BitGo.Auth.SignupController', []).controller('SignupController',
   }
 ]);angular.module('BitGo.Auth.TwoFactorFormDirective', []).directive('twoFactorForm', [
   'UserAPI',
+  'SettingsAPI',
   'UtilityService',
   'NotifyService',
   'BG_DEV',
   'AnalyticsProxy',
-  function (UserAPI, Util, Notify, BG_DEV, AnalyticsProxy) {
+  'featureFlags',
+  function (UserAPI, SettingsAPI, Util, Notify, BG_DEV, AnalyticsProxy, featureFlags) {
     return {
       restrict: 'A',
       require: '^LoginController',
       controller: [
         '$scope',
-        function ($scope) {
+        '$rootScope',
+        '$location',
+        function ($scope, $rootScope, $location) {
           $scope.twoFactorMethods = [
+            'totp',
+            'yubikey',
             'authy',
             'text'
           ];
-          $scope.twoFactorMethod = 'authy';
+          $scope.twoFactorMethod = 'totp';
+          /**
+         * Checks if the user has a verified email before allowing login
+         * @private
+         */
+          function userHasAccess() {
+            if (!$scope.user.settings.email.verified) {
+              $scope.$emit('SetState', 'needsEmailVerify');
+              return false;
+            }
+            return true;
+          }
+          function formIsValid() {
+            return Util.Validators.otpOk($scope.otpCode);
+          }
+          /**
+         * Handle successful OTP push
+         * @private
+         */
+          function onSendOTPSuccess() {
+            // Clear any form errors
+            $scope.clearFormError();
+            // Set params for OTP device type
+            var params = { type: $scope.forceSMS ? 'text' : 'authy' };
+            AnalyticsProxy.track('OTP', params);
+            // Route user to verification page
+            $scope.setState('verifyPhone');
+          }
+          /**
+         * Handle failed OTP push
+         * @private
+         */
+          function onSendOTPFail() {
+            // Clear any form errors
+            $scope.clearFormError();
+            // Set params for OTP device type
+            var params = { type: $scope.forceSMS ? 'text' : 'authy' };
+            // Track phone verification success
+            AnalyticsProxy.track('OTP', params);
+            // Provide error feedback
+            $scope.setFormError('Please enter a valid phone number.');
+          }
+          /**
+         * Handle successful Totp verification from the BitGo service
+         * @param user {Object}
+         * @private
+         */
+          function onTotpSuccess(user) {
+            // Set params for OTP device type
+            var params = { type: 'totp' };
+            // Track phone verification success
+            AnalyticsProxy.track('AddOTPDevice', params);
+            if (userHasAccess()) {
+              $scope.$emit('SignUserIn');
+            }
+          }
+          /**
+         * Handle failed Totp from the BitGo service
+         * @param error {Object}
+         * @private
+         */
+          function onTotpFail(error) {
+            // Track the server verification fail
+            var params = {
+                status: error.status,
+                message: error.error,
+                action: 'AddOTPDevice',
+                type: 'totp'
+              };
+            AnalyticsProxy.track('Error', params);
+            Notify.error('Please enter a valid code');
+          }
+          /**
+         * Handle successful Yubikey verification from the BitGo service
+         * @param user {Object}
+         * @private
+         */
+          function onYubikeySuccess(user) {
+            var params = { type: 'yubikey' };
+            // Track phone verification success
+            AnalyticsProxy.track('AddOTPDevice', params);
+            if (userHasAccess()) {
+              $scope.$emit('SignUserIn');
+            }
+          }
+          /**
+         * Handle failed yubikey from the BitGo service
+         * @param error {Object}
+         * @private
+         */
+          function onYubikeyFail(error) {
+            // Track the server verification fail
+            var metricsData = {
+                status: error.status,
+                message: error.error,
+                action: 'AddOTPDevice',
+                type: 'yubikey'
+              };
+            AnalyticsProxy.track('Error', metricsData);
+            Notify.error('Please enter a valid code');
+          }
+          /**
+         * Handle successful phone verification from the BitGo service
+         * @param user {Object}
+         * @private
+         */
+          function onVerifySuccess(user) {
+            var params = { type: 'authy' };
+            // Track phone verification success
+            AnalyticsProxy.track('AddOTPDevice', params);
+            if (userHasAccess()) {
+              $scope.$emit('SignUserIn');
+            }
+          }
+          /**
+         * Handle failed phone verification from the BitGo service
+         * @param error {Object}
+         * @private
+         */
+          function onVerifyFail(error) {
+            // Track the server verification fail
+            var metricsData = {
+                status: error.status,
+                message: error.error,
+                action: 'AddOTPDevice',
+                type: 'authy'
+              };
+            AnalyticsProxy.track('Error', metricsData);
+            Notify.error('Please enter a valid code');
+          }
+          function onResendSuccess() {
+            Notify.success('Your code was sent.');
+          }
+          function onResendFail(error) {
+            if (error.status === 401 && error.needsOTP) {
+              // In this case, the user was hitting /login to force the SMS resend
+              // (since it is protected). If this error case comes back, we assume
+              // that the server successfully sent the code to the user
+              Notify.success('Your code was sent.');
+            } else {
+              Notify.error('There was an issue resending your code. Please refresh your page and log in again.');
+            }
+          }
+          function onSubmitOTPSuccess() {
+            // Track the OTP success
+            AnalyticsProxy.track('Otp');
+            if (userHasAccess()) {
+              $scope.$emit('SignUserIn');
+            }
+          }
+          function onSubmitOTPFail(error) {
+            // Track the OTP fail
+            var metricsData = {
+                status: error.status,
+                message: error.error,
+                action: 'Otp Login'
+              };
+            AnalyticsProxy.track('Error', metricsData);
+            Notify.error('The code provided was invalid.');
+          }
           /**
          * UI - verifies if a method is the currently selected Otp method
          * @public
@@ -5380,116 +6702,105 @@ angular.module('BitGo.Auth.SignupController', []).controller('SignupController',
             AnalyticsProxy.track('SelectOtpMethod', metricsData);
           };
           /**
-         * Checks if the user has a verified email and phone before allowing login
-         * @private
+         * Allows user to defer two-step verification setup
+         * @public
          */
-          function userHasAccess() {
-            if ($scope.user.emailNotVerified()) {
-              $scope.$emit('SetState', 'needsEmailVerify');
-              return false;
-            }
-            if ($scope.user.phoneNotSet()) {
-              $scope.$emit('SetState', 'setPhone');
-              return false;
-            }
-            if ($scope.user.phoneNotVerified()) {
-              $scope.$emit('SetState', 'verifyPhone');
-              return false;
-            }
-            return true;
-          }
-          function formIsValid() {
-            return Util.Validators.otpOk($scope.otpCode);
-          }
-          /**
-         * Handle successful phone verification from the BitGo service
-         * @param user {Object}
-         * @private
-         */
-          function onVerifySuccess(user) {
-            // Track phone verification success
-            AnalyticsProxy.track('VerifyPhone');
-            if (userHasAccess()) {
-              $scope.$emit('SignUserIn');
-            }
-          }
-          /**
-         * Handle failed phone verification from the BitGo service
-         * @param error {Object}
-         * @private
-         */
-          function onVerifyFail(error) {
-            // Track the server verification fail
-            var metricsData = {
-                status: error.status,
-                message: error.error,
-                action: 'Verify Phone'
+          $scope.deferTwoFactor = function () {
+            var params = {
+                key: 'bypassSetOTP',
+                value: 'true'
               };
-            AnalyticsProxy.track('Error', metricsData);
-            Notify.error('There was a problem verifying your phone.');
-          }
+            if (userHasAccess()) {
+              return UserAPI.me().then(UserAPI.putClientCache(params)).then(function () {
+                $scope.$emit('SignUserIn');
+              });
+            }
+          };
+          $scope.sendOTP = function (forceSMS) {
+            // Clear any errors
+            $scope.clearFormError();
+            $scope.forceSMS = !!forceSMS;
+            var params = {
+                phone: $scope.user.settings.phone.phone,
+                forceSMS: $scope.forceSMS
+              };
+            return UserAPI.sendOTP(params).then(onSendOTPSuccess).catch(onSendOTPFail);
+          };
           $scope.submitVerifyPhone = function () {
             // Clear any errors
             $scope.clearFormError();
             if (formIsValid()) {
               var params = {
-                  type: 'phone',
+                  type: 'authy',
+                  otp: $scope.otpCode,
                   phone: $scope.user.settings.phone.phone,
-                  code: $scope.otpCode
+                  label: 'Authy',
+                  forceSMS: $scope.forceSMS
                 };
-              UserAPI.verify(params).then(function () {
+              UserAPI.addOTPDevice(params).then(function () {
                 return UserAPI.me();
               }).then(onVerifySuccess).catch(onVerifyFail);
             } else {
-              $scope.setFormError('Please enter a valid 7-digit code.');
+              $scope.setFormError('Please enter a valid 2-step verification code.');
             }
           };
-          function onSubmitOTPSuccess() {
-            // Track the OTP success
-            AnalyticsProxy.track('Otp');
-            if (userHasAccess()) {
-              $scope.$emit('SignUserIn');
-            }
-          }
-          function onSubmitOTPFail(error) {
-            // Track the OTP fail
-            var metricsData = {
-                status: error.status,
-                message: error.error,
-                action: 'Otp Login'
+          $scope.newTotp = function () {
+            $scope.state = 'totpSetup';
+            $scope.clearFormError();
+            return UserAPI.newTOTP().then(function (totpUrl) {
+              $scope.totpUrl = totpUrl;
+            });
+          };
+          $scope.setTotp = function () {
+            var params = {
+                type: 'totp',
+                otp: $scope.otpCode,
+                hmac: $scope.totpUrl.hmac,
+                key: $scope.totpUrl.key,
+                label: 'Google Authenticator'
               };
-            AnalyticsProxy.track('Error', metricsData);
-            Notify.error('The code provided was invalid.');
-          }
+            return UserAPI.addOTPDevice(params).then(function () {
+              return UserAPI.me();
+            }).then(onTotpSuccess).catch(onTotpFail);
+          };
+          $scope.cancelTotp = function () {
+            return $scope.$emit('SetState', 'setOtpDevice');
+          };
+          $scope.submitSetYubikey = function () {
+            // Clear any errors
+            $scope.clearFormError();
+            if (formIsValid()) {
+              var params = {
+                  type: 'yubikey',
+                  otp: $scope.otpCode,
+                  label: $scope.otpLabel
+                };
+              UserAPI.addOTPDevice(params).then(function () {
+                return UserAPI.me();
+              }).then(onYubikeySuccess).catch(onYubikeyFail);
+            } else {
+              $scope.setFormError('Please enter a valid Yubikey verification code.');
+            }
+          };
           $scope.submitOTP = function () {
             // Clear any errors
             $scope.clearFormError();
             if (formIsValid()) {
               $scope.attemptLogin().then(onSubmitOTPSuccess).catch(onSubmitOTPFail);
             } else {
-              $scope.setFormError('Please enter a valid 7-digit code.');
+              $scope.setFormError('Please enter a valid 2-step verification code.');
             }
           };
-          function onResendSuccess() {
-            Notify.success('Your code was sent.');
-          }
-          function onResendFail(error) {
-            if (error.status === 401 && error.needsOTP) {
-              // In this case, the user was hitting /login to force the SMS resend
-              // (since it is protected). If this error case comes back, we assume
-              // that the server successfully sent the code to the user
-              Notify.success('Your code was sent.');
-            } else {
-              Notify.error('There was an issue resending your code. Please refresh your page and log in again.');
-            }
-          }
           $scope.resendOTP = function (forceSMS) {
             // Track the text resend
             AnalyticsProxy.track('ResendOtp');
             if ($scope.user.loggedIn) {
               // If there is a session user, they are verifying their phone
               // and we can use the sendOTP protected route
-              var params = { forceSMS: !!forceSMS };
+              var params = {
+                  phone: $scope.user.settings.phone.phone,
+                  forceSMS: !!forceSMS
+                };
               UserAPI.sendOTP(params).then(onResendSuccess).catch(onResendFail);
             } else {
               // If there is no user, we have a user trying to otp to log in
@@ -5508,13 +6819,13 @@ angular.module('BitGo.Auth.SignupController', []).controller('SignupController',
  */
 angular.module('BitGo.Auth.VerifyEmailController', []).controller('VerifyEmailController', [
   '$scope',
-  '$location',
   '$rootScope',
+  '$location',
   'UserAPI',
   'NotifyService',
   'BG_DEV',
   'AnalyticsProxy',
-  function ($scope, $location, $rootScope, UserAPI, NotifyService, BG_DEV, AnalyticsProxy) {
+  function ($scope, $rootScope, $location, UserAPI, NotifyService, BG_DEV, AnalyticsProxy) {
     function handleVerificationFailure(error) {
       // Track the server email validation fail
       var metricsData = {
@@ -5845,7 +7156,8 @@ angular.module('BitGo.Common.BGActivityTilePolicyDescriptionDirective', []).dire
   'WalletsAPI',
   'SyncService',
   'BG_DEV',
-  function ($rootScope, $q, UserAPI, Notify, KeychainsAPI, UtilityService, $modal, WalletSharesAPI, $filter, WalletsAPI, SyncService, BG_DEV) {
+  'SDK',
+  function ($rootScope, $q, UserAPI, Notify, KeychainsAPI, UtilityService, $modal, WalletSharesAPI, $filter, WalletsAPI, SyncService, BG_DEV, SDK) {
     return {
       restrict: 'A',
       controller: [
@@ -5870,7 +7182,7 @@ angular.module('BitGo.Common.BGActivityTilePolicyDescriptionDirective', []).dire
                 // If the user needs to OTP, use the modal to unlock their account
                 openModal({ type: BG_DEV.MODAL_TYPES.otpThenUnlock }).then(function (result) {
                   if (result.type === 'otpThenUnlockSuccess') {
-                    if (!result.data.otp) {
+                    if (!result.data.otp && $rootScope.currentUser.settings.otpDevices > 0) {
                       throw new Error('Missing otp');
                     }
                     if (!result.data.password) {
@@ -5908,6 +7220,7 @@ angular.module('BitGo.Common.BGActivityTilePolicyDescriptionDirective', []).dire
         * @params {object} - data required for the create wallet share function
         * @returns {promise} with data/error from the server calls.
         */
+          // TODO(ben): replace with SDK's shareWallet method?
           $scope.shareWallet = function (shareParams) {
             var error = { status: 401 };
             if (!shareParams || !shareParams.keychain) {
@@ -5930,25 +7243,29 @@ angular.module('BitGo.Common.BGActivityTilePolicyDescriptionDirective', []).dire
                   };
                   return $q.reject(UtilityService.ErrorHelper(error));
                 }
-                var xprv = UtilityService.Crypto.sjclDecrypt($scope.password, data.encryptedXprv);
+                var xprv = SDK.decrypt($scope.password, data.encryptedXprv);
                 // init a new bip32 object based on the xprv from the server
-                var testBip32;
+                var testHDNode;
                 try {
-                  testBip32 = new Bitcoin.BIP32(xprv);
+                  testHDNode = SDK.bitcoin.HDNode.fromBase58(xprv);
+                  console.assert(testHDNode.privKey);
                 } catch (e) {
                   error.error = 'Could not share wallet. Invalid private key';
                   return $q.reject(error);
                 }
-                var testXpub = testBip32.extended_public_key_string();
+                var testXpub = testHDNode.neutered().toBase58();
                 // check if the xprv returned matches the xpub sent to the server
                 if ($rootScope.wallets.all[$scope.walletId].data.private.keychains[0].xpub !== testXpub) {
                   error.error = 'This is a legacy wallet and cannot be shared.';
                   return $q.reject(error);
                 }
-                var eckey = new Bitcoin.ECKey();
-                var secret = UtilityService.Crypto.getECDHSecret(eckey.priv, createShareParams.keychain.toPubKey);
-                createShareParams.keychain.fromPubKey = eckey.getPubKeyHex();
-                createShareParams.keychain.encryptedXprv = UtilityService.Crypto.sjclEncrypt(secret, xprv);
+                var eckey = SDK.bitcoin.ECKey.makeRandom();
+                var secret = SDK.get().getECDHSecret({
+                    otherPubKeyHex: createShareParams.keychain.toPubKey,
+                    eckey: eckey
+                  });
+                createShareParams.keychain.fromPubKey = eckey.pub.toHex();
+                createShareParams.keychain.encryptedXprv = SDK.encrypt(secret, xprv);
                 return WalletSharesAPI.createShare($scope.walletId, createShareParams);
               }
             }).then($scope.onAddUserSuccess).catch(createShareErrorHandler(shareParams));
@@ -5992,6 +7309,7 @@ angular.module('BitGo.Common.BGActivityTilePolicyDescriptionDirective', []).dire
             });
           };
           // Triggers otp modal (with login password) to open if user needs to otp before sending a tx
+          /* istanbul ignore next - all functionality provided by modal controller */
           function openModal(params) {
             if (!params || !params.type) {
               throw new Error('Missing modal type');
@@ -6015,6 +7333,181 @@ angular.module('BitGo.Common.BGActivityTilePolicyDescriptionDirective', []).dire
           }
         }
       ]
+    };
+  }
+]);/**
+ * @ngdoc directive
+ * @name bgApprovalTileEnterpriseRequest
+ * @description
+ * This directive manages the approval tile state for enterprise level approvals
+ * @example
+ *   <span bg-approval-tile-enterprise-request>TILE CONTEXT</span>
+ */
+angular.module('BitGo.Common.BGApprovalTileEnterpriseRequestDirective', []).directive('bgApprovalTileEnterpriseRequest', [
+  '$rootScope',
+  'ApprovalsAPI',
+  'NotifyService',
+  'BG_DEV',
+  'SyncService',
+  '$location',
+  'EnterpriseAPI',
+  'UtilityService',
+  function ($rootScope, ApprovalsAPI, NotifyService, BG_DEV, SyncService, $location, EnterpriseAPI, UtilityService) {
+    return {
+      restrict: 'A',
+      controller: [
+        '$scope',
+        function ($scope) {
+          /** All valid tile view states */
+          $scope.viewStates = ['initial'];
+          /** Show different templates if the approval is one the currentUser created */
+          $scope.userIsCreator = $rootScope.currentUser.settings.id === $scope.approvalItem.creator;
+          /**
+        * Initializes the directive's controller state
+        * @private
+        */
+          function init() {
+            $scope.state = 'initial';
+            $scope.approvalItem.prettyDate = new moment($scope.approvalItem.createDate).format('MMMM Do YYYY, h:mm:ss A');
+          }
+          init();
+        }
+      ],
+      link: function (scope, element, attrs) {
+        /** Valid pending approval states */
+        var validApprovalTypes = [
+            'approved',
+            'rejected'
+          ];
+        /**
+        * Updates a pending approval's state / and the DOM once set
+        * @param {string} approval's new state to set
+        * @public
+        */
+        scope.setApprovalState = function (newState) {
+          if (_.indexOf(validApprovalTypes, newState) === -1) {
+            throw new Error('Expect valid approval state to be set');
+          }
+          var data = {
+              state: newState,
+              id: scope.approvalItem.id
+            };
+          ApprovalsAPI.update(data.id, data).then(function (result) {
+            $('#' + scope.approvalItem.id).animate({
+              height: 0,
+              opacity: 0
+            }, 500, function () {
+              scope.$apply(function () {
+                // remove the approval from the appropriate places
+                $rootScope.enterprises.current.deleteApproval(scope.approvalItem.id);
+                //if the approval results in removing the current user from the enterprise
+                if (result.info.updateEnterpriseRequest && result.info.updateEnterpriseRequest.action == 'remove' && result.info.updateEnterpriseRequest.userId === $rootScope.currentUser.settings.id) {
+                  // check if there are no wallets and if it was an approval
+                  if (_.isEmpty($rootScope.wallets.all) && newState == 'approved') {
+                    EnterpriseAPI.setCurrentEnterprise($rootScope.enterprises.all.personal);
+                    $location.path('/enterprise/personal/wallets');
+                  }
+                }
+                // handle the DOM cleanup
+                $('#' + scope.approvalItem.id).remove();
+                scope.$destroy();
+              });
+            });
+          }).catch(function (error) {
+            var failAction = newState === 'approved' ? 'approving' : 'rejecting';
+            NotifyService.error('There was an issue ' + failAction + ' this request. Please try your action again.');
+          });
+        };
+      }
+    };
+  }
+]);/**
+ * @ngdoc directive
+ * @name
+ * @description
+ * 
+ * @example
+ *   <span bg-approval-tile-invitation>TILE CONTEXT</span>
+ */
+angular.module('BitGo.Common.BGApprovalTileInvitation', []).directive('bgApprovalTileInvitation', [
+  '$rootScope',
+  '$location',
+  'MatchwalletAPI',
+  function ($rootScope, $location, MatchwalletAPI) {
+    return {
+      restrict: 'A',
+      controller: [
+        '$scope',
+        function ($scope) {
+          /** All valid tile view states */
+          $scope.viewStates = ['initial'];
+          /** Reward wallet ID will be set here from matchwallet-reward-wallet directive */
+          $scope.rewardWalletId = null;
+          $scope.goToIdentityVerification = function () {
+            $location.path('/identity/verify');
+          };
+          $scope.goToCreateWallet = function () {
+            $location.path('/enterprise/personal/wallets/create');
+          };
+          /**
+        * Initializes the directive's controller state
+        * @private
+        */
+          function init() {
+            $scope.state = 'initial';
+            $scope.approvalItem.prettyDate = new moment($scope.approvalItem.createDate).format('MMMM Do YYYY, h:mm:ss A');
+            $scope.rewardWalletId = _.findLastKey($rootScope.wallets.all);
+          }
+          init();
+        }
+      ],
+      link: function (scope, element, attrs) {
+        /** Valid pending approval states */
+        var validApprovalTypes = [
+            'approved',
+            'rejected'
+          ];
+        // User can approve if they have verified their identity and created a wallet
+        var isIdentified = $rootScope.currentUser.settings.identity.verified;
+        if (scope.approvalItem.info.gift) {
+          scope.canClaimReward = isIdentified && scope.rewardWalletId;
+        } else if (scope.approvalItem.info.reward) {
+          scope.canClaimReward = isIdentified && scope.approvalItem.info.invitation.giftClaimed && scope.rewardWalletId;
+        }
+        // If invited user accepted their invitation
+        if (scope.approvalItem.info.reward) {
+          scope.invitationAccepted = scope.approvalItem.info.invitation.giftClaimed;
+        }
+        // Animate and remove approval
+        function removeItem() {
+          $('#' + scope.approvalItem.id).animate({
+            height: 0,
+            opacity: 0
+          }, 500, function () {
+            scope.$apply(function () {
+              // remove the approval from the appropriate places
+              $('#' + scope.approvalItem.id).remove();
+              scope.$destroy();
+            });
+          });
+        }
+        /**
+        * Updates a pending approval's state / and the DOM once set
+        * @param {string} approval's new state to set
+        * @public
+        */
+        scope.setApprovalState = function (newState) {
+          if (_.indexOf(validApprovalTypes, newState) === -1) {
+            throw new Error('Expect valid approval state to be set');
+          }
+          if (newState === 'approved') {
+            MatchwalletAPI.claimReward(scope.approvalItem.info.invitation, scope.rewardWalletId).then(removeItem);
+          }
+          if (newState === 'rejected') {
+            MatchwalletAPI.rejectReward(scope.approvalItem.info.invitation).then(removeItem);
+          }
+        };
+      }
     };
   }
 ]);/**
@@ -6274,17 +7767,14 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', []).directive('b
          * @private
          */
         function getRecipients(txhex) {
-          var tx = Bitcoin.Transaction.deserialize(Bitcoin.Util.hexToBytes(txhex));
+          var bitcoin = SDK.bitcoin;
+          var tx = bitcoin.Transaction.fromHex(txhex);
           var recipients = {};
           // note that this includes change addresses
-          tx.outs.forEach(function (txout, idx) {
-            var oldOutput = tx.outs[idx];
-            var outputAddresses = [];
-            oldOutput.script.extractAddresses(outputAddresses);
-            var address = outputAddresses[0].toString();
-            var recipient = {};
+          tx.outs.forEach(function (txout) {
+            var address = bitcoin.Address.fromOutputScript(txout.script, SDK.getNetwork()).toBase58Check();
             if (typeof recipients[address] === 'undefined') {
-              recipients[address] = oldOutput.value;  // value is measured in satoshis
+              recipients[address] = txout.value;  // value is measured in satoshis
             } else {
               // The SDK's API does not support sending multiple different
               // values to the same address. We have no choice but to throw an
@@ -6330,14 +7820,14 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', []).directive('b
           }
           scope.processing = true;
           var txhex, wallet, unspents;
-          return UserAPI.session().then(function (data) {
-            if (data.session) {
+          return UserAPI.session().then(function (session) {
+            if (session) {
               // if the data returned does not have an unlock object, then the user is not unlocked
-              if (!data.session.unlock) {
+              if (!session.unlock) {
                 return otpError();
               } else {
                 // if the txvalue for this unlock exeeds transaction limit, we need to unlock again
-                if (data.session.unlock.txValue !== 0 && scope.txInfo.transaction.requestedAmount > data.session.unlock.txValueLimit - data.session.unlock.txValue) {
+                if (session.unlock.txValue !== 0 && scope.txInfo.transaction.requestedAmount > session.unlock.txValueLimit - session.unlock.txValue) {
                   return otpError();
                 }
               }
@@ -6346,7 +7836,11 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', []).directive('b
             throw new Error('Could not fetch user session');
           }).then(function (res) {
             wallet = res;
-            return wallet.createTransaction({ recipients: recipients });
+            return wallet.createTransaction({
+              recipients: recipients,
+              minConfirms: 1,
+              enforceMinConfirmsForChange: false
+            });
           }).then(function (res) {
             txhex = res.transactionHex;
             // unsigned txhex
@@ -6355,7 +7849,7 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', []).directive('b
             // TODO: Display this fee
             return wallet.getEncryptedUserKeychain({});
           }).then(function (keychain) {
-            // check if we have the passcode. 
+            // check if we have the passcode.
             // Incase the user has been unlocked, we dont have the passcode and need to return an error to pop up the modal
             if (!scope.txInfo.passcode) {
               return $q.reject(UtilityService.ErrorHelper({
@@ -6375,10 +7869,7 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', []).directive('b
                 message: 'Cannot transact. No user key is present on this wallet.'
               }));
             }
-            keychain.xprv = SDK.get().decrypt({
-              input: keychain.encryptedXprv,
-              password: scope.txInfo.passcode
-            });
+            keychain.xprv = SDK.decrypt(scope.txInfo.passcode, keychain.encryptedXprv);
             return wallet.signTransaction({
               transactionHex: txhex,
               keychain: keychain,
@@ -6393,7 +7884,7 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', []).directive('b
               // If the user needs to OTP, use the modal to unlock their account
               openModal({ type: BG_DEV.MODAL_TYPES.otpThenUnlock }).then(function (result) {
                 if (result.type === 'otpThenUnlockSuccess') {
-                  if (!result.data.otp) {
+                  if (!result.data.otp && $rootScope.currentUser.settings.otpDevices > 0) {
                     throw new Error('Missing otp');
                   }
                   if (!result.data.password) {
@@ -6504,7 +7995,8 @@ angular.module('BitGo.Common.BGApprovalsFilter', []).filter('bgApprovalsFilter',
       function filterByType() {
         var VALID_APPROVAL_TYPES = {
             'transactionRequest': true,
-            'userChangeRequest': true
+            'userChangeRequest': true,
+            'updateEnterpriseRequest': true
           };
         if (!_.has(VALID_APPROVAL_TYPES, filterTarget)) {
           throw new Error('Invalid approval type');
@@ -6736,6 +8228,219 @@ angular.module('BitGo.Common.BGConfirmActionDirective', []).directive('bgConfirm
   }
 ]);/**
  * @ngdoc directive
+ * @name bgCreditCardFormDirective
+ * @description
+ * Directive to manage the credit card form
+ * @example
+ *   <div bg-credit-card-form></div>
+ */
+/**/
+angular.module('BitGo.Common.BGCreditCardForm', []).directive('bgCreditCardForm', [
+  '$rootScope',
+  'BG_DEV',
+  '$http',
+  '$compile',
+  '$templateCache',
+  'NotifyService',
+  '$location',
+  'AnalyticsUtilities',
+  function ($rootScope, BG_DEV, $http, $compile, $templateCache, Notify, $location, AnalyticsUtilities) {
+    return {
+      restrict: 'A',
+      controller: [
+        '$scope',
+        function ($scope) {
+          // Will be the instance of our credit card tracking monitor
+          var creditCardCompletionMonitor;
+          // Bool to init the card tracking monitor only once per tab load
+          var cardMonitorInitialized;
+          // Holds user payment data
+          $scope.cc = {
+            cvc: undefined,
+            expiry: undefined,
+            number: undefined,
+            name: undefined
+          };
+          /**
+        * Parses the cc expiration date
+        *
+        * @returns { Array } ['month', 'year']
+        * @private
+        */
+          function parseExpry() {
+            if (!$scope.cc.expiry) {
+              return [];
+            }
+            return $scope.cc.expiry.replace(/ /g, '').split('/');
+          }
+          /**
+        * Check if the payment form is valid
+        *
+        * @returns { Bool }
+        * @private
+        */
+          function formValid() {
+            try {
+              if (!$scope.cc.name) {
+                $scope.setFormError('Please provide the cardholder\'s name.');
+                return false;
+              }
+              if (!Stripe.card.validateCardNumber($scope.cc.number)) {
+                $scope.setFormError('Please enter a valid credit card number.');
+                return false;
+              }
+              if (!$scope.cc.expiry || !Stripe.card.validateExpiry(parseExpry()[0], parseExpry()[1])) {
+                $scope.setFormError('Please enter a valid expiration date.');
+                return false;
+              }
+              if (!Stripe.card.validateCVC($scope.cc.cvc)) {
+                $scope.setFormError('Please enter a valid cvc.');
+                return false;
+              }
+              if ($scope.checkTerms && !$scope.terms) {
+                $scope.setFormError('Please agree to the terms and conditions.');
+                return false;
+              }
+              return true;
+            } catch (e) {
+              Notify.error('Could not validate credit card. ' + e.message + '. Please refresh and try again.');
+            }
+          }
+          /**
+        * UI - Track the user completing entrance of a valid credit card
+        *
+        * @private
+        */
+          function trackCard() {
+            if (!$scope.userPlan || !$scope.selectedPlan || !$scope.userPlan.name || !$scope.selectedPlan.name) {
+              return;
+            }
+            var evtData = {
+                currentPlan: $scope.userPlan.name,
+                selectedPlan: $scope.selectedPlan.name
+              };
+            creditCardCompletionMonitor.track('EnterCard', evtData);
+          }
+          /**
+        * UI - Submit the user's credit card for payment
+        *
+        * @public
+        */
+          $scope.submitCard = function () {
+            if (formValid()) {
+              var stripeData = {
+                  name: $scope.cc.name,
+                  number: $scope.cc.number,
+                  cvc: $scope.cc.cvc,
+                  exp_month: parseExpry()[0],
+                  exp_year: parseExpry()[1]
+                };
+              $scope.inProcess = true;
+              Stripe.setPublishableKey(BG_DEV.STRIPE.TEST.PUBKEY);
+              Stripe.card.createToken(stripeData, function (status, result) {
+                if (result.error) {
+                  $scope.inProcess = false;
+                  Notify.error(result.error.message);
+                  return;
+                } else {
+                  $scope.$emit('BGCreditCardForm.CardSubmitted', result);
+                }
+              });
+            }
+          };
+          /**
+        * UI - Track the user's first entrance of credit card data into the form
+        *
+        * @public
+        */
+          $scope.initCardTracker = function () {
+            if (cardMonitorInitialized) {
+              return;
+            }
+            cardMonitorInitialized = true;
+            trackCard();
+          };
+          var killCardWatcher = $scope.$watch('cc.number', function () {
+              if (typeof $scope.cc.number !== 'string' || $scope.cc.number === '') {
+                return;
+              }
+              trackCard();
+            });
+          // Clean up when the scope is destroyed
+          $scope.$on('$destroy', function () {
+            // remove listeners
+            killCardWatcher();
+          });
+          function init() {
+            // set up credit card tracking
+            creditCardCompletionMonitor = new AnalyticsUtilities.time.CreditCardCompletionMonitor();
+            cardMonitorInitialized = false;
+          }
+          init();
+        }
+      ],
+      link: function (scope, element, attrs) {
+        // if terms are added to form (note: attrs have to be lower case letters)
+        if (attrs.addterms == 'true') {
+          scope.terms = false;
+          // flag to check if terms have to be checked
+          scope.checkTerms = true;
+        }
+      }
+    };
+  }
+]);/*
+  Notes:
+  - This filter takes a number and transform fixed the decimals of it.
+  - If given a value less than 1 (0.0005), 
+    It shows the last decimal even if its greater than numberOfDecimals specified
+
+  - E.g.:
+  @param {Number} numberOfDecimals - null|'number'
+  @param {Number} decorator - If invalid number will use this
+
+
+  {{ 100000000 | bgDecimalFormat:null:nulll }} => '1.0000'
+  {{ 50000000 | bgDecimalFormat:5:null }} => '5.00000'
+  {{ 'string' | bgDecimalFormat:null:null }} => '--'
+  {{ 'string' | bgDecimalFormat:null:'**' }} => '**'
+*/
+angular.module('BitGo.Common.BGDecimalFormatFilter', []).filter('bgDecimalFormat', [
+  '$rootScope',
+  'BG_DEV',
+  function ($rootScope, BG_DEV) {
+    return function (value, numberOfDecimals, decorator) {
+      // default to 4 as the number of decimals
+      numberOfDecimals = numberOfDecimals || 4;
+      decorator = decorator || '--';
+      // If there is no value return decorator
+      if (!value) {
+        return decorator;
+      }
+      // Remove text
+      value = value.toString().replace(/[^0-9\.]/g, '').replace(/(\..*)\./g, '$1');
+      if (!isNaN(value)) {
+        var aux = value;
+        if (aux > 0) {
+          value = parseFloat(value).toFixed(numberOfDecimals);
+          // There are cases when fixed for 2 decimals is not enought, we can get
+          // 0.00 cause the original value is 0.00005 so we are going to loop
+          // until we reach the first number so 0.000058 will become 0.00005
+          while (parseFloat(value) === 0) {
+            value = parseFloat(aux).toFixed(numberOfDecimals++);
+          }
+        }
+      }
+      // After removing the text do we got something?
+      if (!value || value.toString().length === 0) {
+        return decorator;
+      }
+      // Return the value formatted
+      return value;
+    };
+  }
+]);/**
+ * @ngdoc directive
  * @name bgDynamicTableRowManager
  * @description
  * This directive allows us to specify a handling directive for a <tr> element.
@@ -6780,6 +8485,12 @@ angular.module('BitGo.Common.BGDynamicTableRowManagerDirective', []).directive('
                   break;
                 case 'transactionRequest':
                   managingDirective = 'bg-approval-tile-tx-request';
+                  break;
+                case 'updateEnterpriseRequest':
+                  managingDirective = 'bg-approval-tile-enterprise-request';
+                  break;
+                case 'invitation':
+                  managingDirective = 'bg-approval-tile-invitation';
                   break;
                 default:
                   throw new Error('Expected valid approval type. Got: ' + approvalItemType);
@@ -7239,7 +8950,7 @@ angular.module('BitGo.Common.BGInputToSatoshiConverterDirective', []).directive(
         }
         setError(false);
         // app's current bitcoin unit
-        var unit = $rootScope.currency.bitcoinUnit;
+        var unit = attrs.bitcoinUnit || $rootScope.currency.bitcoinUnit;
         /**
         * checks if the value entered is divisible by one satoshi. If so, sets the error
         * @param value {String} value from the input
@@ -7364,7 +9075,13 @@ angular.module('BitGo.Common.BGInputToSatoshiConverterDirective', []).directive(
           if (!_.has(TYPES, type)) {
             throw new Error('Invalid type');
           }
-          return value / TYPES[type].modifier;
+          var valueAux = value / TYPES[type].modifier;
+          // If the attribute toFixed is passed into the element
+          // the resulting view value will be formatted using that number.
+          if (typeof attrs.toFixed !== 'undefined') {
+            valueAux = parseFloat(parseFloat(valueAux).toFixed(attrs.toFixed));
+          }
+          return valueAux;
         }
         // conversion "view -> model"
         ngModel.$parsers.unshift(function (value) {
@@ -7377,7 +9094,9 @@ angular.module('BitGo.Common.BGInputToSatoshiConverterDirective', []).directive(
       }
     };
   }
-]);angular.module('BitGo.Common.BGInputValidator', []).directive('bgInputValidator', [function () {
+]);angular.module('BitGo.Common.BGInputValidator', []).directive('bgInputValidator', [
+  'SDK',
+  function (SDK) {
     return {
       restrict: 'A',
       require: '^ngModel',
@@ -7394,7 +9113,7 @@ angular.module('BitGo.Common.BGInputToSatoshiConverterDirective', []).directive(
         // validate if an input is a valid BIP32 xpub
         function xpubValid(xpub) {
           try {
-            new Bitcoin.BIP32(xpub);
+            console.assert(!SDK.bitcoin.HDNode.fromBase58(xpub).privKey);
           } catch (error) {
             return false;
           }
@@ -7429,6 +9148,9 @@ angular.module('BitGo.Common.BGInputToSatoshiConverterDirective', []).directive(
           case 'xpub':
             modelInvalid = !xpubValid(ngModel.$viewValue);
             break;
+          case 'custom':
+            modelInvalid = !attrs.custom(ngModel.$viewValue);
+            break;
           }
           var visibleError = modelInvalid && ngModel.$dirty && !ngModel.focused;
           // DOM access for setting focus was async, so
@@ -7460,7 +9182,8 @@ angular.module('BitGo.Common.BGInputToSatoshiConverterDirective', []).directive(
         });
       }
     };
-  }]);/**
+  }
+]);/**
  * @ngdoc directive
  * @name bgIntlTelInput
  * @description
@@ -7539,8 +9262,8 @@ angular.module('BitGo.Common.BGIsObjectEmptyFilter', []).filter('bgIsObjectEmpty
 angular.module('BitGo.Common.BGJsonDecryptDirective', []).directive('bgJsonDecrypt', [
   '$parse',
   '$timeout',
-  'UtilityService',
-  function ($parse, $timeout, UtilityService) {
+  'SDK',
+  function ($parse, $timeout, SDK) {
     return {
       restrict: 'A',
       require: '^ngModel',
@@ -7558,8 +9281,7 @@ angular.module('BitGo.Common.BGJsonDecryptDirective', []).directive('bgJsonDecry
         */
         function decryptJSON() {
           try {
-            var unencryptedPasscode = UtilityService.Crypto.sjclDecrypt(scope.recoveryInfo.passcodeEncryptionCode, json);
-            return unencryptedPasscode;
+            return SDK.decrypt(scope.recoveryInfo.passcodeEncryptionCode, json);
           } catch (e) {
             return undefined;
           }
@@ -7734,7 +9456,256 @@ angular.module('BitGo.Common.BGOrderObjectsByFilter', []).filter('bgOrderObjects
     });
     return sorted;
   };
-});angular.module('BitGo.Common.BGPasswordStrength', []).directive('bgPasswordStrength', function () {
+});/**
+ * @ngdoc directive
+ * @name bgOtpDevicesDirective
+ * @description
+ * Directive to provide otp information on scope
+ * @example
+ * <div bg-otp-devices></div>
+ */
+angular.module('BitGo.Common.BGOtpDevicesDirective', []).directive('bgOtpDevices', [
+  '$rootScope',
+  '$modal',
+  '$location',
+  '$q',
+  'BG_DEV',
+  'UtilityService',
+  'NotifyService',
+  'AnalyticsProxy',
+  'UserAPI',
+  'CacheService',
+  function ($rootScope, $modal, $location, $q, BG_DEV, Util, Notify, AnalyticsProxy, UserAPI, CacheService) {
+    return {
+      restrict: 'A',
+      controller: [
+        '$scope',
+        function ($scope) {
+          // set two factor auth methods
+          $scope.twoFactorMethods = [
+            'totp',
+            'yubikey',
+            'authy'
+          ];
+          // set Google Authenticator to be the default
+          $scope.twoFactorMethod = 'totp';
+          // Cache setup
+          var unlockTimeCache = CacheService.getCache('unlockTime') || new CacheService.Cache('localStorage', 'unlockTime', 120 * 60 * 1000);
+          /**
+          *  UI - verifies if a method is the currently selected Otp method
+          *  @public
+          */
+          $scope.isTwoFactorMethod = function (method) {
+            return method === $scope.twoFactorMethod;
+          };
+          /**
+          *  UI - sets the current Otp method on the scope
+          *  @public
+          */
+          $scope.setTwoFactorMethod = function (method) {
+            $scope.initFormFields();
+            if (typeof method !== 'string') {
+              throw new Error('invalid method');
+            }
+            $scope.twoFactorMethod = method;
+            // Track the method selected
+            var metricsData = { method: method };
+            AnalyticsProxy.track('SelectOtpMethod', metricsData);
+          };
+          /**
+          *  UI - retrieves relevant params from scope and returns a params object
+          *  @public
+          */
+          $scope.userHasPhone = function () {
+            if ($rootScope.currentUser.settings.phone.phone) {
+              return true;
+            }
+            return false;
+          };
+          $scope.getOtpParams = function (otpDeviceType) {
+            switch (otpDeviceType) {
+            case 'totp':
+              return {
+                type: 'totp',
+                otp: $scope.device.otpCode,
+                hmac: $scope.device.totpUrl.hmac,
+                key: $scope.device.totpUrl.key,
+                label: 'Google Authenticator'
+              };
+            case 'yubikey':
+              return {
+                type: 'yubikey',
+                otp: $scope.device.otpCode,
+                label: $scope.device.otpLabel
+              };
+            case 'authy':
+              return {
+                type: 'authy',
+                otp: $scope.device.otpCode,
+                phone: $rootScope.inputPhone,
+                label: 'Authy'
+              };
+            default:
+              return null;
+            }
+          };
+          /**
+         * Sets the user on the otp device list page after a removal or addition of an otp device
+         */
+          $scope.refreshOtpDevices = function () {
+            $scope.getSettings();
+          };
+          /**
+         * Initializes form fields that may contain user input
+         * @public
+         */
+          $scope.initFormFields = function (action) {
+            $scope.device = {};
+            $scope.formError = null;
+            $scope.twoFactorMethod = 'totp';
+            if (action === 'added') {
+              $scope.device.added = true;
+            }
+            if (action === 'removed') {
+              $scope.device.removed = true;
+            }
+          };
+          /**
+         * Triggers otp modal to open if user needs to otp before adding/removing a device
+         * @private
+         */
+          function openModal(params) {
+            if (!params || !params.type) {
+              throw new Error('Missing modal type');
+            }
+            var modalInstance = $modal.open({
+                templateUrl: 'modal/templates/modalcontainer.html',
+                controller: 'ModalController',
+                scope: $scope,
+                size: params.size,
+                resolve: {
+                  locals: function () {
+                    return {
+                      type: params.type,
+                      userAction: BG_DEV.MODAL_USER_ACTIONS.otp
+                    };
+                  }
+                }
+              });
+            return modalInstance.result;
+          }
+          function handleAddDeviceSuccess() {
+            if ($rootScope.currentUser.settings.otpDevices.length === 0) {
+              if (unlockTimeCache.get('unlockTime')) {
+                unlockTimeCache.remove('unlockTime');
+              }
+            }
+            $scope.initFormFields('added');
+            $scope.setTemplate('twoStepVerificationList', true);
+            Notify.success('Two-step verification device successfully added');
+          }
+          function handleRemoveDeviceSuccess() {
+            $scope.initFormFields('removed');
+            $scope.setTemplate('twoStepVerificationList');
+            Notify.success('Two-step verification device successfully removed');
+          }
+          // Set user to the twoStepVerificationSelect page
+          $scope.setTwoStepVerificationSelect = function () {
+            $scope.initFormFields();
+            $scope.setState('twoStepVerificationSelect');
+            $scope.setTwoFactorMethod('totp');
+          };
+          /**
+         * Handles error states associated with attempting to remove a device
+         * @private
+         */
+          function handleRemoveDeviceError(error, params) {
+            if (Util.API.isOtpError(error)) {
+              // If the user needs to OTP, use the modal to unlock their account
+              return openModal({ type: BG_DEV.MODAL_TYPES.otp }).then(function (result) {
+                if (result.type === 'otpsuccess') {
+                  // automatically resubmit the otpDeviceId on modal close
+                  $scope.removeDevice(params.id);
+                }
+              });
+            }
+            // Otherwise just display the error to the user
+            Notify.error('This device has already been removed');
+          }
+          /**
+         * Handles error states associated with attempting to add a device
+         * @private
+         */
+          function handleAddDeviceError(error) {
+            if (error.message === 'device is already registered') {
+              return Notify.error('This device is already registered');
+            }
+            return Notify.error('Please enter a valid code');
+          }
+          function setPhoneVerificationState() {
+            $rootScope.inputPhone = $scope.device.inputPhone;
+            return $scope.setState('phoneVerification');
+          }
+          function phoneIsValid() {
+            return Util.Validators.phoneOk($scope.device.inputPhone);
+          }
+          $scope.setPhoneVerification = function () {
+            if ($scope.device.inputPhone === $scope.user.getPhone()) {
+              return $scope.setFormError('This phone is already registered');
+            }
+            if (!phoneIsValid()) {
+              return $scope.setFormError('Invalid phone number');
+            }
+            // set sendOTP params
+            var params = { phone: $scope.device.inputPhone };
+            return UserAPI.sendOTP(params).then(setPhoneVerificationState());
+          };
+          $scope.removeDevice = function (otpDeviceId) {
+            if (!otpDeviceId) {
+              return Notify.error('There was an error removing your device.  Please refresh the page and try again.');
+            }
+            var params = { id: otpDeviceId };
+            return UserAPI.removeOTPDevice(params).then(function (data) {
+              $scope.getSettings();
+            }).then(function (data) {
+              handleRemoveDeviceSuccess();
+            }).catch(function (error) {
+              handleRemoveDeviceError(error, params);
+            });
+          };
+          $scope.unlockThenAddOtpDevice = function () {
+            return UserAPI.unlock().then(function (res) {
+              return UserAPI.addOTPDevice($scope.params);
+            }).then(function (res) {
+              $scope.refreshOtpDevices();
+            }).then(handleAddDeviceSuccess).catch(function (error) {
+              handleAddDeviceError(error);
+            });
+          };
+          $scope.addOTPDevice = function (otpDeviceType) {
+            // retrieve the params set to the scope form fields
+            $scope.params = $scope.getOtpParams(otpDeviceType);
+            // ensure that the otp device params were retrieved from scope
+            if (otpDeviceType === null || !$scope.params) {
+              return Notify.error('There was an error adding your device. Please refresh the page and try again.');
+            }
+            // if user is shown the select otp device view initially
+            // will need an unlock, prior to adding an otp device
+            if ($rootScope.currentUser.settings.otpDevices.length === 0) {
+              return $scope.unlockThenAddOtpDevice();
+            }
+            return UserAPI.addOTPDevice($scope.params).then(function (res) {
+              $scope.refreshOtpDevices();
+            }).then(handleAddDeviceSuccess).catch(function (error) {
+              handleAddDeviceError(error);
+            });
+          };
+          $scope.device = {};
+        }
+      ]
+    };
+  }
+]);angular.module('BitGo.Common.BGPasswordStrength', []).directive('bgPasswordStrength', function () {
   return {
     restrict: 'A',
     scope: {
@@ -8282,6 +10253,8 @@ angular.module('BitGo.Common', [
   'BitGo.Common.BGActivityTilePolicyDescriptionDirective',
   'BitGo.Common.BGAddUserToWalletDirective',
   'BitGo.Common.BGApprovalsFilter',
+  'BitGo.Common.BGApprovalTileEnterpriseRequestDirective',
+  'BitGo.Common.BGApprovalTileInvitation',
   'BitGo.Common.BGApprovalTilePolicyRequestDirective',
   'BitGo.Common.BGApprovalTileTxRequestDirective',
   'BitGo.Common.BGBitcoinFormatFilter',
@@ -8289,6 +10262,8 @@ angular.module('BitGo.Common', [
   'BitGo.Common.BGCapitalizeFilter',
   'BitGo.Common.BGCenterEllipsisFilter',
   'BitGo.Common.BGConfirmActionDirective',
+  'BitGo.Common.BGCreditCardForm',
+  'BitGo.Common.BGDecimalFormatFilter',
   'BitGo.Common.BGDynamicTableRowManagerDirective',
   'BitGo.Common.BGEnterpriseOrderingFilter',
   'BitGo.Common.BGEnterpriseWalletsByUser',
@@ -8309,6 +10284,7 @@ angular.module('BitGo.Common', [
   'BitGo.Common.BGJsonDecryptDirective',
   'BitGo.Common.BGListActiveTileManagerDirective',
   'BitGo.Common.BGOrderObjectsByFilter',
+  'BitGo.Common.BGOtpDevicesDirective',
   'BitGo.Common.BGPasswordStrength',
   'BitGo.Common.BGPermissionsRoleConversionFilter',
   'BitGo.Common.BGPolicyIdStringConversionFilter',
@@ -8320,7 +10296,218 @@ angular.module('BitGo.Common', [
   'BitGo.Common.BGWalletPermissionsDirective',
   'BitGo.Common.BGWalletSharesByWalletFilter',
   'BitGo.Common.BGWalletsByRoleFilter',
-  'BitGo.Common.BGWalletSharesByWalletFilter'
+  'BitGo.Common.BGWalletSharesByWalletFilter',
+  'BitGo.Common.SSDropDownDirective',
+  'BitGo.API.SDK'
+]);/**
+* @ngdoc directive
+* @name ssDropDown
+* @description
+* This module is a directive who is in charge of load a dropdown with the avaiable coins from
+* the ssAPI, if an error happens will load only the bitcoin entry
+* @return A dropdown with the available coins
+* @example <ss-drop-down ignoreCoinsList="changeCoin" is-disabled="addressBeingGenerated" has-errors="unableToLoadAltCoins" alt="receiveAltCoin.altCoin" change="changeCoin" class="customSelect">
+          </ss-drop-down>
+*/
+angular.module('BitGo.Common.SSDropDownDirective', []).directive('ssDropDown', [
+  '$timeout',
+  'ssAPI',
+  'NotifyService',
+  function ($timeout, ssAPI, NotifyService) {
+    return {
+      restrict: 'E',
+      transclude: true,
+      templateUrl: '/common/templates/ssDropdown.html',
+      scope: {
+        isDisabled: '=',
+        alt: '=',
+        triggerChange: '=change',
+        hasErrors: '=hasErrors'
+      },
+      link: function (scope, elem, attr) {
+        // The search string to filter the dropdown list by
+        scope.search = '';
+        var AltCoins = {
+            init: function (altCoins) {
+              // Asign to our local property
+              this.altCoins = [];
+              // Should we ignore coins?
+              for (index = 0; index < altCoins.length; index++) {
+                if (_.isUndefined(scope.alt.ignoreList) || scope.alt.ignoreList.indexOf(altCoins[index].name) === -1 && scope.alt.ignoreList.indexOf(altCoins[index].symbol) === -1) {
+                  this.altCoins.push(altCoins[index]);
+                }
+              }
+              scope.items = this.altCoins;
+            },
+            getDefaultCoins: function () {
+              return [{
+                  name: 'Bitcoin',
+                  symbol: 'BTC',
+                  image: ssAPI.getCoinImage('BTC'),
+                  status: 'available'
+                }];
+            },
+            display: function () {
+              // Generate options
+              var d = dropDownManager(scope, elem[0]);
+              if (!_.isUndefined(attr.selected)) {
+                var defaultCoin = ssAPI.getByName(attr.selected);
+                if (defaultCoin !== null) {
+                  scope.coinImg = defaultCoin.image;
+                  scope.coinName = defaultCoin.name;
+                  scope.hasCoinSelected = true;
+                }
+              }
+              scope.changeCoin = function (coin) {
+                scope.coinImg = coin.image;
+                scope.coinName = coin.name;
+                scope.hasCoinSelected = true;
+                d.toggleList();
+                if (typeof scope.triggerChange === 'function') {
+                  scope.triggerChange(coin);
+                }
+              };
+              scope.toggleList = function () {
+                scope.search = '';
+                scope.filtering = false;
+                d.toggleList();
+              };
+              scope.keypressFilter = function (event) {
+                var char = String.fromCharCode(event.which);
+                if (event.keyCode === 27) {
+                  d.hideFilter();
+                  d.toggleList(true);
+                  return;
+                }
+                // Only for the first letter, further times user will be typing on the input
+                if (scope.search === '') {
+                  scope.search += char;
+                }
+                d.filter.focus();
+                d.showFilter();
+              };
+              scope.refresh = _.debounce(function () {
+                d.load();
+              }, 0);
+            }
+          };
+        /**
+        If an error ocurrs we want to show the toast to the user,
+        and anyway load the dropdown with the Bitcoin value, so user can continue using
+        the system :)
+        @private
+        @param err Object representing the error | String
+        */
+        var errorHandler = function (err) {
+          if (!_.isUndefined(scope.hasErrors)) {
+            scope.hasErrors = true;
+          }
+          // Show the error to the user
+          var shiftError = ssAPI.getError(err);
+          // If is an error that we don't have map yet, get the default
+          if (shiftError === null) {
+            shiftError = ssAPI.getError('defaultError');
+          }
+          // Show message on screen
+          //NotifyService.error(shiftError.msg);
+          var coinsContainer = document.getElementById('coins-container');
+          while (coinsContainer.firstChild) {
+            coinsContainer.removeChild(coinsContainer.firstChild);
+          }
+          // Init with just the bitcoin entry
+          AltCoins.init(AltCoins.getDefaultCoins());
+          // Display and compile the dropdown
+          AltCoins.display();
+        };
+        // Make a call to the shapeshift API,
+        // this method will return the available coins :)
+        ssAPI.list().then(function (data) {
+          // Shapeshift if something happens return an attribute instead of a http error
+          // If no error!?
+          if (_.isUndefined(data.error)) {
+            // Init with the data from ShapeShift
+            AltCoins.init(data);
+            // Display and compile the dropdown
+            AltCoins.display();
+          } else {
+            return errorHandler(data.error);
+          }
+        }).catch(errorHandler);
+        // Dropdown component
+        /**
+        * Dropdown functionality, not dependent on library
+        */
+        function dropDownManager(scope, elem) {
+          return {
+            elem: elem,
+            display: {},
+            arrow: {},
+            container: {},
+            filter: {},
+            load: function () {
+              this.display = this.elem.querySelector('.display');
+              this.arrow = this.elem.querySelector('.arrow');
+              this.container = this.elem.querySelector('.container');
+              this.filter = this.elem.querySelector('.inputFilter');
+              this.addHoverHandlers();
+            },
+            addHoverHandlers: function () {
+              var self = this;
+              var timeoutId;
+              function leave() {
+                timeoutId = window.setTimeout(close, 500);
+              }
+              function enter() {
+                window.clearTimeout(timeoutId);
+              }
+              function close() {
+                self.toggleList(true);
+              }
+              self.display.addEventListener('mouseleave', leave);
+              self.filter.addEventListener('mouseleave', leave);
+              self.container.addEventListener('mouseleave', leave);
+              self.display.addEventListener('mouseenter', enter);
+              self.filter.addEventListener('mouseenter', enter);
+              self.container.addEventListener('mouseenter', enter);
+            },
+            toggleList: function (close) {
+              if (this.findClass(this.container, 'show') || close) {
+                this.removeClass(this.container, 'show');
+                this.removeClass(this.arrow, 'up');
+                if (!this.findClass(this.arrow, 'down')) {
+                  this.addClass(this.arrow, 'down');
+                }
+                this.hideFilter();
+              } else {
+                //  this.setImages();
+                this.addClass(this.container, 'show');
+                this.removeClass(this.arrow, 'down');
+                this.addClass(this.arrow, 'up');
+              }
+            },
+            showFilter: function () {
+              this.removeClass(this.filter, 'hide');
+            },
+            hideFilter: function () {
+              this.removeClass(this.filter, 'hide');
+              this.addClass(this.filter, 'hide');
+            },
+            addClass: function (elem, className) {
+              elem.className = elem.className + ' ' + className;
+            },
+            removeClass: function (elem, className) {
+              var re = new RegExp('\\s*\\b' + className + '\\b');
+              elem.className = elem.className.replace(re, '');
+            },
+            findClass: function (elem, className) {
+              var re = new RegExp('\\s*\\b' + className + '\\b');
+              return re.test(elem.className);
+            }
+          };
+        }
+      }
+    };
+  }
 ]);/**
  * @ngdoc directive
  * @name activityApprovals
@@ -8344,7 +10531,7 @@ angular.module('BitGo.Enterprise.ActivityApprovalsDirective', []).directive('act
           // show empty state if no approvals exist
           $scope.noApprovalsExist = null;
           function displayUI() {
-            if (!_.isEmpty($rootScope.enterprises.current.pendingApprovals)) {
+            if ($rootScope.enterprises && $rootScope.enterprises.current && !_.isEmpty($rootScope.enterprises.current.pendingApprovals)) {
               $scope.enterpriseApprovalsExist = true;
               $scope.noApprovalsExist = false;
             } else {
@@ -8465,6 +10652,7 @@ angular.module('BitGo.Enterprise.ActivityApprovalsDirective', []).directive('act
   'BG_DEV',
   function ($compile, $http, $templateCache, BG_DEV) {
     // Returns the template path to compile based on logItem.type
+    /* istanbul ignore next */
     var getTemplate = function (logItemType) {
       var template = '';
       switch (logItemType) {
@@ -8501,6 +10689,18 @@ angular.module('BitGo.Enterprise.ActivityApprovalsDirective', []).directive('act
       case 'labelAddress':
       // Commenting
       case 'updateComment':
+      // organizations
+      case 'createEnterprise':
+      // TODO: Barath. Fill all these in after backend changes
+      case 'updateEnterpriseUser':
+      case 'approveEnterpriseUser':
+      case 'rejectEnterpriseUser':
+      case 'updateEnterpriseSupport':
+      case 'updateEnterpriseCredit':
+      case 'updateEnterpriseUserPrice':
+      // organization approvals                
+      case 'acceptEnterpriseUser':
+      case 'rejectEnterpriseUser':
         template = 'enterprise/templates/activitytiles/' + logItemType + '.html';
         break;
       default:
@@ -8512,6 +10712,7 @@ angular.module('BitGo.Enterprise.ActivityApprovalsDirective', []).directive('act
     // We work in the link function because we need to specify the
     // template before compile time; then manually compile it once we have
     // data on the scope
+    /* istanbul ignore next */
     return {
       restrict: 'A',
       replace: true,
@@ -8533,6 +10734,8 @@ angular.module('BitGo.Enterprise.ActivityApprovalsDirective', []).directive('act
         scope.logItem.prettyDate = new moment(scope.logItem.date).format('MMMM Do YYYY, h:mm:ss A');
         // Bool for if the action is a policy item
         scope.logItem.isPolicyItem = checkPolicyItem(scope.logItem.type);
+        // Plans get the plans so that plan changes can be displayed
+        scope.plans = BG_DEV.ENTERPRISE.SUPPORT_PLAN_LEVELS;
         // init the template
         $http.get(getTemplate(scope.logItem.type), { cache: $templateCache }).success(function (html) {
           element.html(html);
@@ -8598,7 +10801,8 @@ angular.module('BitGo.Enterprise.EnterpriseActivityController', []).controller('
   'BG_DEV',
   'InternalStateService',
   'AnalyticsProxy',
-  function ($scope, $rootScope, BG_DEV, InternalStateService, AnalyticsProxy) {
+  '$location',
+  function ($scope, $rootScope, BG_DEV, InternalStateService, AnalyticsProxy, $location) {
     // The view viewStates within the enterprise activity section
     $scope.viewStates = [
       'auditlog',
@@ -8628,13 +10832,13 @@ angular.module('BitGo.Enterprise.EnterpriseActivityController', []).controller('
       return !$rootScope.currentUser.isPro() && $rootScope.enterprises.current && $rootScope.enterprises.current.isPersonal;
     };
     /**
-    * Take the user to their account settings - plans page
+    * Take the user to the create organization page
     *
     * @public
     */
-    $scope.goToPlans = function () {
+    $scope.goToCreateOrg = function () {
       AnalyticsProxy.track('clickUpsell', { type: 'auditLog' });
-      InternalStateService.goTo('personal_settings:plans');
+      $location.path('/create-organization');
     };
     // gets the view template based on the $scope's viewSection
     function getTemplate() {
@@ -8722,6 +10926,8 @@ angular.module('BitGo.Enterprise.EnterpriseApprovalTileDirective', []).directive
             break;
           case 'transactionRequest':
           case 'userChangeRequest':
+          case 'updateEnterpriseRequest':
+          case 'invitation':
             template = 'enterprise/templates/approvaltiles/' + approvalItemType + '.html';
             break;
           default:
@@ -8739,6 +10945,281 @@ angular.module('BitGo.Enterprise.EnterpriseApprovalTileDirective', []).directive
       }
     };
   }
+]);/**
+ * @ngdoc controller
+ * @name EnterpriseCreateController
+ * @description
+ * This controls the flow and manages all states involved with creating a new enterprise
+ * Manages: enterpriseCreateStepslabel, enterpriseCreateStepsSupport, enterpriseCreateStepsBilling
+ */
+angular.module('BitGo.Enterprise.EnterpriseCreateController', []).controller('EnterpriseCreateController', [
+  '$scope',
+  '$rootScope',
+  '$location',
+  'AnalyticsProxy',
+  'BG_DEV',
+  function ($scope, $rootScope, $location, AnalyticsProxy, BG_DEV) {
+    // view states for the enterprise creation
+    $scope.viewStates = [
+      'label',
+      'support',
+      'payment'
+    ];
+    // the current view state
+    $scope.state = null;
+    // template source for the current view
+    $scope.createFlowTemplateSource = null;
+    // the data model used by the ui-inputs during enterprise creation
+    $scope.inputs = null;
+    // takes the user out of the wallet create flow
+    // Accessible by all scopes inheriting this controller
+    $scope.cancel = function () {
+      // track the cancel
+      AnalyticsProxy.track('CreateOrganizationCancelled');
+      // Note: this redirect will also wipe all of the state that's been built up
+      $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/wallets');
+    };
+    // returns the view current view template (based on the $scope's current state)
+    function getTemplate() {
+      if (!$scope.state || _.indexOf($scope.viewStates, $scope.state) === -1) {
+        throw new Error('Expect $scope.state to be defined when setting template for enterprise create flow');
+      }
+      var tpl;
+      switch ($scope.state) {
+      case 'label':
+        tpl = 'enterprise/templates/enterprise-create-partial-label.html';
+        break;
+      case 'support':
+        tpl = 'enterprise/templates/enterprise-create-partial-support.html';
+        break;
+      case 'payment':
+        tpl = 'enterprise/templates/enterprise-create-partial-payment.html';
+        break;
+      }
+      return tpl;
+    }
+    // Event listeners
+    var killStateWatch = $scope.$watch('state', function (state) {
+        $scope.createFlowTemplateSource = getTemplate();
+      });
+    // Listener cleanup
+    $scope.$on('$destroy', function () {
+      killStateWatch();
+    });
+    function init() {
+      $rootScope.setContext('createEnterprise');
+      AnalyticsProxy.track('CreateOrganizationEntered');
+      $scope.state = 'label';
+      // All properties we expect the user to enter in creation
+      $scope.inputs = {
+        enterpriseSupportPlan: null,
+        enterpriseLabel: null
+      };
+    }
+    init();
+  }
+]);/**
+ * @ngdoc directive
+ * @name EnterpriseCreateStepsBillingDirective
+ * @description
+ * Directive to manage the org creation billinb step
+ * Parent Controller is EnterpriseCreateController
+ * @example
+ *   <div enterprise-create-steps-billing></div>
+ */
+angular.module('BitGo.Enterprise.EnterpriseCreateStepsBillingDirective', []).directive('enterpriseCreateStepsBilling', [
+  '$rootScope',
+  'AnalyticsProxy',
+  'BG_DEV',
+  'EnterpriseAPI',
+  '$location',
+  'NotifyService',
+  'EnterpriseModel',
+  function ($rootScope, AnalyticsProxy, BG_DEV, EnterpriseAPI, $location, Notify, EnterpriseModel) {
+    return {
+      restrict: 'A',
+      controller: [
+        '$scope',
+        function ($scope) {
+          /**
+         * Go Back to choosing support plan of the org
+         * @public
+         */
+          $scope.goBack = function () {
+            AnalyticsProxy.track('CreateOrganizationBillingBack');
+            $scope.setState('support');
+          };
+          /**
+        * Add enterprise after getting new credit card info
+        *
+        * @public
+        */
+          var killCreditCardsListener = $scope.$on('BGCreditCardForm.CardSubmitted', function (evt, result) {
+              if (!result.id) {
+                throw new Error('Error handling Stripe result');
+              }
+              EnterpriseAPI.addEnterprise({
+                token: result.id,
+                name: $scope.inputs.enterpriseLabel,
+                supportPlan: $scope.inputs.enterpriseSupportPlan.planId
+              }).then(function (enterpriseData) {
+                AnalyticsProxy.track('OrganizationCreated');
+                $scope.inProcess = false;
+                var enterprise = new EnterpriseModel.Enterprise(enterpriseData);
+                // add the enterprise onto the user object
+                if (!$rootScope.currentUser.settings.enterprises) {
+                  $rootScope.currentUser.settings.enterprises = [];
+                }
+                $rootScope.currentUser.settings.enterprises.push({ id: enterprise.id });
+                // add the enterprise to rootscope and redirect to new dashboard
+                $rootScope.enterprises.all[enterprise.id] = enterprise;
+                EnterpriseAPI.setCurrentEnterprise(enterprise);
+                $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/wallets');
+              }).catch(function (err) {
+                $scope.inProcess = false;
+                Notify.error(err.error);
+              });
+            });
+          // Clean up the listeners -- helps decrease run loop time and
+          // reduce liklihood of references being kept on the scope
+          $scope.$on('$destroy', function () {
+            killCreditCardsListener();
+          });
+        }
+      ]
+    };
+  }
+]);/**
+ * @ngdoc directive
+ * @name enterpriseCreateStepsLabel
+ * @description
+ * Directive to manage the org creation label step
+ * Parent Controller is EnterpriseCreateController
+ * @example
+ *   <div enterprise-create-steps-label></div>
+ */
+angular.module('BitGo.Enterprise.EnterpriseCreateStepsLabelDirective', []).directive('enterpriseCreateStepsLabel', [
+  '$rootScope',
+  'AnalyticsProxy',
+  function ($rootScope, AnalyticsProxy) {
+    return {
+      restrict: 'A',
+      controller: [
+        '$scope',
+        function ($scope) {
+          /**
+         * Track org create failure events
+         * @param error {String}
+         *
+         * @private
+         */
+          function trackClientLabelFail(error) {
+            if (typeof error !== 'string') {
+              throw new Error('invalid error');
+            }
+            var metricsData = {
+                status: 'client',
+                message: error,
+                action: 'LabelEnterprise'
+              };
+            AnalyticsProxy.track('Error', metricsData);
+          }
+          /**
+         * Check if label step is valid
+         *
+         * @private
+         */
+          function isValidStep() {
+            if ($scope.inputs.enterpriseLabel === '' || !$scope.inputs.enterpriseLabel) {
+              trackClientLabelFail('Missing Enterprise Name');
+              $scope.setFormError('Please enter organization  name.');
+              return false;
+            }
+            if ($scope.inputs.enterpriseLabel.indexOf('.') !== -1) {
+              trackClientLabelFail('Invalid Organization Name');
+              $scope.setFormError('Organization names cannot contain periods.');
+              return false;
+            }
+            if ($scope.inputs.enterpriseLabel.length > 50) {
+              trackClientLabelFail('Invalid Organization Name Length');
+              $scope.setFormError('Organization names cannot be longer than 50 characters.');
+              return false;
+            }
+            return true;
+          }
+          /**
+         * Advance the org creation flow by labelling enterprise
+         *
+         * @public
+         */
+          $scope.advanceLabel = function () {
+            // clear any errors
+            $scope.clearFormError();
+            if (isValidStep()) {
+              // track the successful label advancement
+              var metricsData = { enterpriseLabel: $scope.inputs.enterpriseLabel };
+              AnalyticsProxy.track('LabelEnterprise', metricsData);
+              // advance the form
+              $scope.setState('support');
+            }
+          };
+        }
+      ]
+    };
+  }
+]);/**
+ * @ngdoc directive
+ * @name enterpriseCreateStepsSupport
+ * @description
+ * Directive to manage the org creation support step
+ * Parent Controller is EnterpriseCreateController
+ * @example
+ *   <div enterprise-create-steps-support></div>
+ */
+angular.module('BitGo.Enterprise.EnterpriseCreateStepsSupportDirective', []).directive('enterpriseCreateStepsSupport', [
+  '$rootScope',
+  'AnalyticsProxy',
+  'BG_DEV',
+  function ($rootScope, AnalyticsProxy, BG_DEV) {
+    return {
+      restrict: 'A',
+      controller: [
+        '$scope',
+        function ($scope) {
+          // The valid user plans
+          $scope.plans = BG_DEV.ENTERPRISE.SUPPORT_PLAN_LEVELS;
+          // if the plan was pre-selected
+          if ($scope.inputs.enterpriseSupportPlan) {
+            $scope.selectedPlanId = $scope.inputs.enterpriseSupportPlan.planId;
+          } else {
+            // default selected plan to professional
+            $scope.selectedPlanId = BG_DEV.ENTERPRISE.SUPPORT_PLAN_LEVELS.OrgProMonthly.planId;
+          }
+          /**
+         * Go Back to the labelling of the org
+         * @public
+         */
+          $scope.goBack = function () {
+            AnalyticsProxy.track('CreateOrganizationSupportBack');
+            $scope.setState('label');
+          };
+          /**
+         * Advance the org creation flow by choosing support plan
+         *
+         * @public
+         */
+          $scope.advanceSupport = function () {
+            // track the successful support plan choosing
+            var metricsData = { enterpriseSupportPlan: BG_DEV.ENTERPRISE.SUPPORT_PLAN_LEVELS[$scope.selectedPlanId] };
+            AnalyticsProxy.track('ChooseSupportPlan', metricsData);
+            $scope.inputs.enterpriseSupportPlan = BG_DEV.ENTERPRISE.SUPPORT_PLAN_LEVELS[$scope.selectedPlanId];
+            // advance the form
+            $scope.setState('payment');
+          };
+        }
+      ]
+    };
+  }
 ]);/*
   About:
   - Handles all functionality for a BitGo Enterprise (e.g dealing with
@@ -8747,18 +11228,23 @@ angular.module('BitGo.Enterprise.EnterpriseApprovalTileDirective', []).directive
 angular.module('BitGo.Enterprise', [
   'BitGo.Enterprise.EnterpriseWalletsController',
   'BitGo.Enterprise.MarketWidgetDirective',
+  'BitGo.Enterprise.MatchwalletWidgetDirective',
   'BitGo.Enterprise.EnterpriseActivityController',
   'BitGo.Enterprise.ActivityAuditLogDirective',
   'BitGo.Enterprise.ActivityApprovalsDirective',
   'BitGo.Enterprise.AuditLogActivityTileDirective',
   'BitGo.Enterprise.EnterpriseApprovalTileDirective',
   'BitGo.Enterprise.EnterpriseSettingsController',
-  'BitGo.Enterprise.PersonalSettingsController',
-  'BitGo.Enterprise.SettingsUsersManagerDirective',
-  'BitGo.Enterprise.SettingsAddUserFormDirective',
+  'BitGo.Enterprise.EnterpriseSettingsCompanyDirective',
+  'BitGo.Enterprise.EnterpriseSettingsSupportDirective',
+  'BitGo.Enterprise.EnterpriseSettingsBillingDirective',
   'BitGo.Enterprise.EnterpriseReportsController',
   'BitGo.Enterprise.MonthlyReportsDirective',
-  'BitGo.Enterprise.CSVReportsDirective'
+  'BitGo.Enterprise.CSVReportsDirective',
+  'BitGo.Enterprise.EnterpriseCreateController',
+  'BitGo.Enterprise.EnterpriseCreateStepsLabelDirective',
+  'BitGo.Enterprise.EnterpriseCreateStepsSupportDirective',
+  'BitGo.Enterprise.EnterpriseCreateStepsBillingDirective'
 ]);/*
   Notes:
   - This controls the view for the enterprise wallet reporting page
@@ -8770,7 +11256,8 @@ angular.module('BitGo.Enterprise.EnterpriseReportsController', []).controller('E
   'InternalStateService',
   'BG_DEV',
   'AnalyticsProxy',
-  function ($scope, $rootScope, Notify, InternalStateService, BG_DEV, AnalyticsProxy) {
+  '$location',
+  function ($scope, $rootScope, Notify, InternalStateService, BG_DEV, AnalyticsProxy, $location) {
     // The view viewStates within the enterprise reports section
     $scope.viewStates = [
       'monthly',
@@ -8791,13 +11278,13 @@ angular.module('BitGo.Enterprise.EnterpriseReportsController', []).controller('E
       return $rootScope.currentUser.isBasic() && $rootScope.enterprises.current && $rootScope.enterprises.current.isPersonal;
     };
     /**
-    * Take the user to their account settings - plans page
+    * Take the user to the create org page
     *
     * @public
     */
-    $scope.goToPlans = function () {
+    $scope.goToCreateOrg = function () {
       AnalyticsProxy.track('clickUpsell', { type: 'reports' });
-      InternalStateService.goTo('personal_settings:plans');
+      $location.path('/create-organization');
     };
     // Return list of wallets sorted by name
     $scope.getWallets = function () {
@@ -8852,58 +11339,313 @@ angular.module('BitGo.Enterprise.EnterpriseReportsController', []).controller('E
     }
     init();
   }
+]);/**
+ * @ngdoc directive
+ * @name enterpriseBillingFormDirective
+ * @description
+ * Directive to manage billing information for enterprises
+ * @example
+ *   <div enterprise-settings-billing></div>
+ */
+/**/
+angular.module('BitGo.Enterprise.EnterpriseSettingsBillingDirective', []).directive('enterpriseSettingsBilling', [
+  'BG_DEV',
+  '$rootScope',
+  'EnterpriseAPI',
+  'NotifyService',
+  function (BG_DEV, $rootScope, EnterpriseAPI, Notify) {
+    return {
+      restrict: 'A',
+      require: '^EnterpriseSettingsController',
+      controller: [
+        '$scope',
+        function ($scope) {
+          $scope.plans = BG_DEV.ENTERPRISE.SUPPORT_PLAN_LEVELS;
+          // hardcoded now but this could change according to enterprise
+          $scope.userCost = $scope.enterpriseUsers.count * 30;
+          $scope.viewStates = [
+            'showExistingCard',
+            'addNewCard'
+          ];
+          $scope.state = null;
+          /**
+        * Update the billing info for the enteprise after getting a payment id from stripe
+        * @public
+        */
+          $scope.$on('BGCreditCardForm.CardSubmitted', function (evt, result) {
+            if (!result.id) {
+              throw new Error('Error handling Stripe result');
+            }
+            EnterpriseAPI.updateEnterpriseBilling({
+              cardToken: result.id,
+              enterpriseId: $rootScope.enterprises.current.id
+            }).then(function (newEnterprise) {
+              $scope.state = 'showExistingCard';
+              // check if payment existed before and present notification accordingly
+              if ($rootScope.enterprises.current.hasPaymentOnFile()) {
+                Notify.success('Your credit card was replaced');
+              } else {
+                Notify.success('A new credit card was added to the account');
+              }
+              // Tack on payment info onto the enterprise
+              $rootScope.enterprises.current.customerData = newEnterprise.customerData;
+              $scope.inProcess = false;
+            }).catch(function (err) {
+              $scope.inProcess = false;
+              Notify.error(err.error);
+            });
+          });
+          function init() {
+            // Init the state based on whether the enterprise has a card on record or not
+            if ($rootScope.enterprises.current.hasPaymentOnFile()) {
+              $scope.state = 'showExistingCard';
+            } else {
+              $scope.state = 'addNewCard';
+            }
+          }
+          init();
+        }
+      ]
+    };
+  }
+]);/**
+ * @ngdoc directive
+ * @name enterpriseSettingsCompany
+ * @description
+ * Handles the addition and removal of admin users on the enterprise
+ * @example
+ * <div enterprise-settings-company>
+ * </div>
+ */
+angular.module('BitGo.Enterprise.EnterpriseSettingsCompanyDirective', []).directive('enterpriseSettingsCompany', [
+  '$rootScope',
+  'UtilityService',
+  'EnterpriseAPI',
+  'NotifyService',
+  'ApprovalsAPI',
+  function ($rootScope, Util, EnterpriseAPI, Notify, ApprovalsAPI) {
+    return {
+      restrict: 'A',
+      controller: [
+        '$scope',
+        function ($scope) {
+          function formIsValid() {
+            if (!Util.Validators.emailOk($scope.email)) {
+              $scope.setFormError('Please enter valid email');
+              return false;
+            }
+            return true;
+          }
+          /**
+        * Add an admin to an enterprise
+        */
+          $scope.addAdmin = function () {
+            var email = $scope.email;
+            if (formIsValid()) {
+              $scope.clearFormError();
+              var params = {
+                  username: email,
+                  enterpriseId: $rootScope.enterprises.current.id
+                };
+              EnterpriseAPI.addEnterpriseAdmin(params).then(function (data) {
+                //clear email if valid
+                $scope.email = '';
+                if ($scope.enterpriseUsers.adminUsers.length > 1) {
+                  // add to enterprise users with pending approval
+                  return ApprovalsAPI.getApprovals({ enterprise: $rootScope.enterprises.current.id }).then(function (data) {
+                    $rootScope.enterprises.current.setApprovals(data.pendingApprovals);
+                  });
+                } else {
+                  $scope.enterpriseUsers.adminUsers.push({ username: email });
+                }
+              }).catch(function (error) {
+                if (error.error === 'invalid user') {
+                  Notify.error('Please have ' + email + ' signup with BitGo before adding as an owner');
+                } else {
+                  Notify.errorHandler(error);
+                }
+              });
+            }
+          };
+          /**
+        * User cannot remove himself
+        */
+          $scope.canRemove = function (userId) {
+            return userId !== $rootScope.currentUser.settings.id;
+          };
+          /**
+        * Remove an admin from an enterprise
+        * @params {string} username of admin to remove
+        */
+          $scope.removeAdmin = function (username) {
+            var params = {
+                username: username,
+                enterpriseId: $rootScope.enterprises.current.id
+              };
+            EnterpriseAPI.removeEnterpriseAdmin(params).then(function (data) {
+              if ($scope.enterpriseUsers.adminUsers.length > 1) {
+                // get pending approvals
+                return ApprovalsAPI.getApprovals({ enterprise: $rootScope.enterprises.current.id }).then(function (data) {
+                  $rootScope.enterprises.current.setApprovals(data.pendingApprovals);
+                });
+              } else {
+                // note: removing an enterprise admin always requires approval. Hence this should never be hit
+                _.remove($scope.enterpriseUsers.adminUsers, function (user) {
+                  return user.username == params.username;
+                });
+              }
+            }).catch(Notify.errorHandler);
+          };
+        }
+      ]
+    };
+  }
 ]);/*
   Notes:
   - This controls the view for the enterprise wallet settings page and
   all subsections (it uses bg-state-manager) to handle template swapping
 */
 angular.module('BitGo.Enterprise.EnterpriseSettingsController', []).controller('EnterpriseSettingsController', [
+  '$rootScope',
   '$scope',
   'InternalStateService',
-  function ($scope, InternalStateService) {
+  'EnterpriseAPI',
+  'NotifyService',
+  function ($rootScope, $scope, InternalStateService, EnterpriseAPI, Notify) {
     // The view viewStates within the enterprise settings for a specific enterprise
     $scope.viewStates = [
-      'company',
-      'users'
+      'organization',
+      'users',
+      'support',
+      'billing'
     ];
+    // object which maps view states to correspoing html files
+    var stateTemplates = {
+        organization: 'enterprise/templates/settings-partial-company.html',
+        users: 'enterprise/templates/settings-partial-users.html',
+        support: 'enterprise/templates/settings-partial-support.html',
+        billing: 'enterprise/templates/settings-partial-billing.html'
+      };
     // The current view section
     $scope.state = undefined;
     // sets the template to use based on the section
     $scope.enterpriseSettingsTemplateSource = null;
+    // scope variable to store data of enterprise users
+    $scope.enterpriseUsers = {};
     // gets the view template based on the $scope's currentSection
     function getTemplate() {
       if (!$scope.state || _.indexOf($scope.viewStates, $scope.state) === -1) {
         throw new Error('Expect $scope.state to be defined when setting template for enterprise settings');
       }
-      var tpl;
-      switch ($scope.state) {
-      case 'company':
-        tpl = 'enterprise/templates/settings-partial-company.html';
-        break;
-      case 'users':
-        tpl = 'enterprise/templates/settings-partial-users.html';
-        break;
-      }
-      return tpl;
+      return stateTemplates[$scope.state];
     }
     // Events Handlers
     // Watch for changes in the $scope's state and set the view's template
     var killStateWatch = $scope.$watch('state', function () {
         $scope.enterpriseSettingsTemplateSource = getTemplate();
       });
+    // Listen for enteprises to be set
+    var killEnterpriseListener = $rootScope.$on('EnterpriseAPI.CurrentEnterpriseSet', function () {
+        EnterpriseAPI.getEnterpriseUsers({ enterpriseId: $rootScope.enterprises.current.id }).then(function (data) {
+          $scope.enterpriseUsers = data;
+        });
+      });
     // Clean up the listeners when the scope is destroyed
     $scope.$on('$destroy', function () {
       killStateWatch();
+      killEnterpriseListener();
     });
-    $scope.setSubState = function () {
-      $scope.$broadcast('EnterpriseSettingsController.showAllUsers');
-    };
     function init() {
       $rootScope.setContext('enterpriseSettings');
-      $scope.state = InternalStateService.getInitState($scope.viewStates) || 'company';
+      $scope.state = InternalStateService.getInitState($scope.viewStates) || 'organization';
       $scope.enterpriseSettingsTemplateSource = getTemplate();
     }
     init();
+  }
+]);/**
+ * @ngdoc directive
+ * @name enterpriseSettingsSupport
+ * @description
+ * Handles the addition and removal of admin users on the enterprise
+ * @example
+ * <div enterprise-settings-support>
+ * </div>
+ */
+angular.module('BitGo.Enterprise.EnterpriseSettingsSupportDirective', []).directive('enterpriseSettingsSupport', [
+  '$rootScope',
+  'BG_DEV',
+  'EnterpriseAPI',
+  'NotifyService',
+  function ($rootScope, BG_DEV, EnterpriseAPI, Notify) {
+    return {
+      restrict: 'A',
+      controller: [
+        '$scope',
+        function ($scope) {
+          // The valid user plans
+          $scope.plans = BG_DEV.ENTERPRISE.SUPPORT_PLAN_LEVELS;
+          // check if the current org plan is valid
+          if (!_.has($scope.plans, $rootScope.enterprises.current.supportPlan)) {
+            //default to basic
+            $rootScope.enterprises.current.supportPlan = BG_DEV.ENTERPRISE.SUPPORT_PLAN_LEVELS.OrgBasicMonthly.planId;
+          }
+          // default selected plan to current plan
+          $scope.selectedPlanId = $scope.plans[$rootScope.enterprises.current.supportPlan].planId;
+          // flag to keep track of whether a new plan is selected
+          $scope.newPlanSelected = false;
+          // flag to decide whether to show confirmation state
+          $scope.confirmationState = false;
+          /**
+        * Gets called when the user makes a change in plan selection
+        */
+          $scope.onSelectSupportPlan = function () {
+            $scope.confirmationState = false;
+            $scope.newPlanSelected = false;
+            //if selected support plan is different from current support plan, show submit button and scroll to bottom
+            if ($scope.selectedPlanId !== $scope.plans[$rootScope.enterprises.current.supportPlan].planId) {
+              $scope.newPlanSelected = true;
+              $('html, body').animate({ scrollTop: $(document).height() });
+            }
+          };
+          /**
+        * logic to show 'upgrade' or 'downgrade' based on what the user is doing
+        * params {string} the planId with which compare the users current plan
+        */
+          $scope.isUpgrade = function (planId) {
+            if (!planId) {
+              throw new Error('isUpgrade requires planId');
+            }
+            return $scope.plans[$rootScope.enterprises.current.supportPlan].level < $scope.plans[planId].level;
+          };
+          /**
+        * Function to change support plan
+        */
+          $scope.submitSupportPlan = function () {
+            // if there is no card on file (for old enterprises) -> throw error
+            if (!$rootScope.enterprises.current.hasPaymentOnFile()) {
+              Notify.error('Please add a credit card before changing support plan');
+              return;
+            }
+            var params = {
+                enterpriseId: $rootScope.enterprises.current.id,
+                supportPlan: $scope.selectedPlanId
+              };
+            EnterpriseAPI.updateEnterpriseBilling(params).then(function (data) {
+              $scope.confirmationState = true;
+              // update the users support plan
+              $rootScope.enterprises.current.supportPlan = data.supportPlan;
+            }).catch(Notify.errorHandler);
+          };
+          function init() {
+            // if they are legacy users switch them over to custom
+            if ($rootScope.enterprises.current.supportPlan === BG_DEV.ENTERPRISE.SUPPORT_PLAN_LEVELS.external.planId) {
+              $scope.selectedPlanId = $scope.plans.custom.planId;
+            }
+          }
+          init();
+        }
+      ]
+    };
   }
 ]);/*
   Notes:
@@ -8914,6 +11656,7 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', []).controller('E
   '$scope',
   '$modal',
   '$rootScope',
+  'CacheService',
   '$location',
   '$filter',
   'WalletsAPI',
@@ -8926,7 +11669,11 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', []).controller('E
   'SyncService',
   'RequiredActionService',
   'AnalyticsProxy',
-  function ($q, $scope, $modal, $rootScope, $location, $filter, WalletsAPI, WalletSharesAPI, UtilityService, Notify, KeychainsAPI, EnterpriseAPI, BG_DEV, SyncService, RequiredActionService, AnalyticsProxy) {
+  'InternalStateService',
+  'SDK',
+  function ($q, $scope, $modal, $rootScope, CacheService, $location, $filter, WalletsAPI, WalletSharesAPI, UtilityService, Notify, KeychainsAPI, EnterpriseAPI, BG_DEV, SyncService, RequiredActionService, AnalyticsProxy, InternalStateService, SDK) {
+    // start cache service for create wallet modal
+    var enterpriseCache = new CacheService.Cache('sessionStorage', 'Enterprise', 60 * 60 * 1000);
     // show the ui if user has access to any wallets
     $scope.noWalletsAcrossEnterprisesExist = null;
     // show the ui if filtered wallets exist
@@ -8939,10 +11686,63 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', []).controller('E
     $scope.filteredWalletSharesExist = null;
     // show the ui for no wallet shares existing
     $scope.noWalletSharesExist = null;
+    // keeps track of whether we received WalletsAPI.CurrentWalletsSet
+    var receivedUserWalletsSetEvent = false;
+    $scope.setTwoStepVerification = function () {
+      InternalStateService.goTo('personal_settings:security');
+    };
+    /* istanbul ignore next */
+    $scope.goToCreateOrg = function () {
+      AnalyticsProxy.track('clickUpsell', {
+        type: 'dashboardWidget',
+        invitation: !!$rootScope.invitation
+      });
+      $location.path('/create-organization');
+    };
+    /* istanbul ignore next */
+    $scope.redirectReferralLink = function () {
+      AnalyticsProxy.track('clickReferral', {
+        type: 'dashboardWidget',
+        invitation: !!$rootScope.invitation
+      });
+    };
+    function isBitfinexReferent() {
+      var referrer = $rootScope.currentUser.settings.referrer;
+      if (referrer && referrer.source && referrer.source.toLowerCase().indexOf(BG_DEV.REFERRER.BITFINEX.toLowerCase()) > -1) {
+        return true;
+      }
+      return false;
+    }
+    /* istanbul ignore next */
+    $scope.showReferralWidget = function () {
+      // Check for bitfinex enterpise
+      var isWalletListEmpty = _.isEmpty($rootScope.wallets.all);
+      var isBitfinexEnterprise = $rootScope.enterprises.current && $rootScope.enterprises.current.id === BG_DEV.ENTERPRISE.BITFINEX_ID;
+      /*
+      Only show the dialog if a) the user has a wallet which b) is not associated with a Bitfinex enterprise and c) the
+      user didn't come to us from or due to a referral by Bitfinex
+       */
+      return !isWalletListEmpty && !isBitfinexEnterprise && !isBitfinexReferent();
+    };
+    /* istanbul ignore next */
+    $scope.showCreateOrgWidget = function () {
+      return ($rootScope.currentUser.isBasic() || $rootScope.currentUser.isGrandfathered()) && !$rootScope.currentUser.isEnterpriseCustomer();
+    };
+    /* istanbul ignore next */
+    $scope.otpDeviceNotSet = function () {
+      return _.isEmpty($rootScope.currentUser.settings.otpDevices);
+    };
+    function showFundModal() {
+      // Check for bitfinex enterpise
+      // TODO: Barath - remove this and do a cleaner fix along with oauth/signup referral      
+      if (!_.isEmpty($rootScope.wallets.all) && !isBitfinexReferent()) {
+        return $rootScope.enterprises.current && $rootScope.enterprises.current.balance === 0 && $rootScope.enterprises.current.isPersonal;
+      }
+    }
     /**
-      * show the wallet list once filtering listeners are stabilized
-      * @private
-      */
+     * show the wallet list once filtering listeners are stabilized
+     * @private
+     */
     function setFilteredWalletsForUI() {
       if (!_.isEmpty($rootScope.wallets.all)) {
         $scope.filteredWalletsExist = true;
@@ -8978,7 +11778,7 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', []).controller('E
     // Link off to the create new wallet flow
     $scope.createNewWallet = function () {
       // track the create flow kick-off
-      AnalyticsProxy.track('CreateWalletStarted');
+      AnalyticsProxy.track('CreateWalletStarted', { invitation: !!$rootScope.invitation });
       // If the user has a weak login password, we force them to upgrade it
       // before they can create any more wallets
       if (RequiredActionService.hasAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW)) {
@@ -8992,22 +11792,17 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', []).controller('E
     };
     // function to check if the user can create wallets on the current enterprise
     $scope.canCreateWallet = function () {
-      if ($rootScope.enterprises.current && $rootScope.enterprises.current.isPersonal) {
+      if ($rootScope.enterprises.current && $rootScope.enterprises.current.isAdmin) {
         return true;
       }
-      // If the user is not an enterprise customer, then he cannot create wallets
-      if (!$rootScope.currentUser.isEnterpriseCustomer()) {
-        return false;
-      }
-      return $rootScope.currentUser.settings.enterprises.some(function (enterprise) {
-        if ($rootScope.enterprises.current && enterprise.id === $rootScope.enterprises.current.id) {
-          return true;
-        }
-      });
     };
     // Link in to a specific wallet and set the current wallet on rootscope
     $scope.goToWallet = function (wallet) {
       WalletsAPI.setCurrentWallet(wallet);
+    };
+    // Go to identity verification page
+    $scope.goToIdentityVerification = function goToIdentityVerification() {
+      $location.path('/identity/verify');
     };
     /**
     * accept wallet share error handler.
@@ -9023,7 +11818,7 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', []).controller('E
             walletName: walletShare.walletLabel
           }).then(function (result) {
             if (result.type === 'otpThenUnlockSuccess') {
-              if (!result.data.otp) {
+              if (!result.data.otp && !$scope.noOtpDeviceSet) {
                 throw new Error('Missing otp');
               }
               if (!result.data.password) {
@@ -9076,14 +11871,14 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', []).controller('E
       $scope.processShare = true;
       var params = {
           state: 'accepted',
-          shareId: walletShare.id
+          walletShareId: walletShare.id
         };
       var role = $filter('bgPermissionsRoleConversionFilter')(walletShare.permissions);
       if (role === BG_DEV.WALLET.ROLES.ADMIN || role === BG_DEV.WALLET.ROLES.SPEND) {
-        WalletSharesAPI.getSharedWallet({ shareId: walletShare.id }).then(function (data) {
+        WalletSharesAPI.getSharedWallet({ walletShareId: walletShare.id }).then(function (data) {
           // check if the wallet is a cold wallet. If so accept share without getting secret etc. (this just behaves as a 'view only' share wallet)
           if (!data.keychain) {
-            return WalletSharesAPI.updateShare(params).then(shareUserSuccess);
+            return WalletSharesAPI.updateShare(params).then($scope.shareUserSuccess);
           } else {
             return KeychainsAPI.get($rootScope.currentUser.settings.ecdhKeychain).then(function (sharingKeychain) {
               if (!sharingKeychain.encryptedXprv) {
@@ -9101,27 +11896,30 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', []).controller('E
                 return $q.reject(UtilityService.ErrorHelper(errorData));
               }
               // Now we have the sharing keychain, we can work out the secret used for sharing the wallet with us
-              sharingKeychain.xprv = UtilityService.Crypto.sjclDecrypt($scope.password, sharingKeychain.encryptedXprv);
-              var rootExtKey = new BIP32(sharingKeychain.xprv);
+              sharingKeychain.xprv = SDK.decrypt($scope.password, sharingKeychain.encryptedXprv);
+              var rootExtKey = SDK.bitcoin.HDNode.fromBase58(sharingKeychain.xprv);
               // Derive key by path (which is used between these 2 users only)
-              var extKey = rootExtKey.derive(data.keychain.path);
-              var secret = UtilityService.Crypto.getECDHSecret(extKey.eckey.priv, data.keychain.fromPubKey);
+              var extKey = rootExtKey.deriveFromPath(data.keychain.path);
+              var secret = SDK.get().getECDHSecret({
+                  eckey: extKey.privKey,
+                  otherPubKeyHex: data.keychain.fromPubKey
+                });
               // Yes! We got the secret successfully here, now decrypt the shared wallet xprv
-              var decryptedSharedWalletXprv = UtilityService.Crypto.sjclDecrypt(secret, data.keychain.encryptedXprv);
-              encryptedSharedWalletXprv = UtilityService.Crypto.sjclEncrypt($scope.password, decryptedSharedWalletXprv);
+              var decryptedSharedWalletXprv = SDK.decrypt(secret, data.keychain.encryptedXprv);
+              encryptedSharedWalletXprv = SDK.encrypt($scope.password, decryptedSharedWalletXprv);
               params.encryptedXprv = encryptedSharedWalletXprv;
               return WalletSharesAPI.updateShare(params);
             });
           }
-        }).then(shareUserSuccess).catch(AcceptShareErrorHandler(walletShare));
+        }).then($scope.shareUserSuccess).catch(AcceptShareErrorHandler(walletShare));
       } else {
-        return WalletSharesAPI.updateShare(params).then(shareUserSuccess);
+        return WalletSharesAPI.updateShare(params).then($scope.shareUserSuccess);
       }
     };
-    function shareUserSuccess() {
+    $scope.shareUserSuccess = function () {
       // TODO Barath. Might be a better (smoother for UI) way to accept share
       SyncService.sync();
-    }
+    };
     function rejectShareSuccess() {
       $scope.processShare = false;
       WalletSharesAPI.getAllSharedWallets();
@@ -9129,22 +11927,44 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', []).controller('E
     // reject a share
     $scope.rejectShare = function (walletShare) {
       $scope.processShare = true;
-      WalletSharesAPI.cancelShare({ shareId: walletShare.id }).then(rejectShareSuccess).catch(Notify.errorHandler);
+      WalletSharesAPI.cancelShare({ walletShareId: walletShare.id }).then(rejectShareSuccess).catch(Notify.errorHandler);
     };
+    function showModal(walletsData) {
+      var firstWalletPromptShown = enterpriseCache.get('firstWalletPromptShown');
+      var fundWalletPromptShown = enterpriseCache.get('fundWalletPromptShown');
+      var isWalletModal = true;
+      // if this is the first wallet with no balance, show the fund wallet modal
+      if (showFundModal() && !fundWalletPromptShown) {
+        enterpriseCache.add('fundWalletPromptShown', true);
+        openModal({
+          type: BG_DEV.MODAL_TYPES.fundWallet,
+          userAction: BG_DEV.MODAL_USER_ACTIONS.fundWallet,
+          url: 'modal/templates/fundWallet.html'
+        }, isWalletModal);
+      } else if (_.isEmpty(walletsData.allWallets) && _.isEmpty($rootScope.walletShares.all.incoming) && !firstWalletPromptShown) {
+        enterpriseCache.add('firstWalletPromptShown', true);
+        openModal({
+          type: BG_DEV.MODAL_TYPES.createWallet,
+          userAction: BG_DEV.MODAL_USER_ACTIONS.createWallet,
+          url: 'modal/templates/createWallet.html'
+        }, isWalletModal);
+      }
+    }
     // Event Listeners
     // Listen for the enterprises's wallet shares to be set before showing the list
     var killWalletSharesListener = $rootScope.$on('WalletSharesAPI.FilteredWalletSharesSet', function (evt, data) {
         setFilteredWalletSharesForUI();
       });
-    // Event Listeners
     // Listen for all user wallets to be set
     var killUserWalletsListener = $rootScope.$on('WalletsAPI.UserWalletsSet', function (evt, data) {
+        receivedUserWalletsSetEvent = true;
         if (_.isEmpty(data.allWallets)) {
           $scope.noWalletsAcrossEnterprisesExist = true;
         } else {
           $scope.noWalletsAcrossEnterprisesExist = false;
         }
         setFilteredWalletsForUI();
+        showModal(data);
       });
     // Clean up the listeners -- helps decrease run loop time and
     // reduce liklihood of references being kept on the scope
@@ -9152,11 +11972,33 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', []).controller('E
       killWalletSharesListener();
       killUserWalletsListener();
     });
-    function openModal(params) {
-      if (!params || !params.type || !params.walletName) {
+    function openModal(params, isWalletModal) {
+      if (!params || !params.type) {
         throw new Error('Missing modal params');
       }
-      var modalInstance = $modal.open({
+      var modalInstance;
+      if (isWalletModal) {
+        modalInstance = $modal.open({
+          templateUrl: params.url,
+          controller: 'ModalController',
+          scope: $scope,
+          size: params.size,
+          resolve: {
+            locals: function () {
+              return {
+                type: params.type,
+                userAction: params.userAction
+              };
+            }
+          }
+        });
+      }  // if it is a wallet share accept
+      else {
+        // check for wallet name while accepting share
+        if (!params.walletName) {
+          throw new Error('Missing modal params');
+        }
+        modalInstance = $modal.open({
           templateUrl: 'modal/templates/modalcontainer.html',
           controller: 'ModalController',
           scope: $scope,
@@ -9171,6 +12013,7 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', []).controller('E
             }
           }
         });
+      }
       return modalInstance.result;
     }
     function init() {
@@ -9207,7 +12050,7 @@ angular.module('BitGo.Enterprise.MarketWidgetDirective', []).directive('marketWi
             $scope.userHover = false;
           };
           // sets and updates $scope.currency data on the isolate scope
-          function setScope(currencyData) {
+          function setScope(currencyData, marketDataAvailable) {
             // check if currency data is received first
             if (currencyData && currencyData.data && currencyData.data.current) {
               // restrict the price to 2 decimal values
@@ -9221,14 +12064,22 @@ angular.module('BitGo.Enterprise.MarketWidgetDirective', []).directive('marketWi
                 $scope.direction = 'down';
               }
               currencyData.data.current.last = parseFloat(currencyData.data.current.last).toFixed(2);
+              currencyData.data.current.prevDayHigh = parseFloat(currencyData.data.current.prevDayHigh).toFixed(2);
+              currencyData.data.current.prevDayLow = parseFloat(currencyData.data.current.prevDayLow).toFixed(2);
               $scope.currency = currencyData;
+              $scope.marketDataAvailable = marketDataAvailable;
             }
           }
-          setScope($rootScope.currency);
+          setScope($rootScope.currency, $rootScope.marketDataAvailable);
           //initialize chartTime to one day
           $scope.chartTime = 'months';
-          $rootScope.$on('MarketDataAPI.AppCurrencyUpdated', function (event, currencyData) {
-            setScope(currencyData);
+          var killCurrencyUpdated = $rootScope.$on('MarketDataAPI.AppCurrencyUpdated', function (event, currencyData) {
+              setScope(currencyData, $rootScope.marketDataAvailable);
+            });
+          // Clean up the listeners -- helps decrease run loop time and
+          // reduce liklihood of references being kept on the scope
+          $scope.$on('$destroy', function () {
+            killCurrencyUpdated();
           });
           $scope.setTime = function (time) {
             if ($scope.chartTime !== time) {
@@ -9325,6 +12176,59 @@ angular.module('BitGo.Enterprise.MarketWidgetDirective', []).directive('marketWi
   }
 ]);/**
  * @ngdoc directive
+ * @name matchwalletWidget
+ * @description
+ * The info box on the enterprise page that links to the user's match wallet.
+ * @example
+ * <div matchwallet-widget>
+ *   <a ng-click="goToMatchwallet()">Invite</a>
+ * </div>
+ */
+angular.module('BitGo.Enterprise.MatchwalletWidgetDirective', []).directive('matchwalletWidget', [
+  '$rootScope',
+  'MatchwalletAPI',
+  'AnalyticsProxy',
+  'UtilityService',
+  function ($rootScope, MatchwalletAPI, AnalyticsProxy, UtilityService) {
+    return {
+      restrict: 'A',
+      controller: [
+        '$scope',
+        function ($scope) {
+          var onMatchwalletCreateFailure = UtilityService.API.promiseErrorHelper();
+          var onMatchwalletCreateSuccess = function (matchwallet) {
+            AnalyticsProxy.track('create', {
+              type: 'matchwallet',
+              invitation: !!$rootScope.invitation
+            });
+            MatchwalletAPI.setCurrentMatchwallet(matchwallet);
+          };
+          // Matchwallet template helpers
+          $scope.canSendInvites = function canSendInvites() {
+            if ($rootScope.enterprises && $rootScope.enterprises.current && $rootScope.enterprises.current.isPersonal) {
+              return MatchwalletAPI.canSendInvites();
+            }
+          };
+          // Go to bitgo rewards wallt
+          $scope.goToMatchwallet = function () {
+            AnalyticsProxy.track('click', {
+              type: 'matchwallet',
+              invitation: !!$rootScope.invitation
+            });
+            // create a matchwallet if none exists
+            if (!$rootScope.matchwallets || _.isEmpty($rootScope.matchwallets.all)) {
+              return MatchwalletAPI.createMatchwallet().then(onMatchwalletCreateSuccess).catch(onMatchwalletCreateFailure);
+            }
+            // Get most recently created rewards wallet
+            var lastMatchwallet = _.findLast($rootScope.matchwallets.all);
+            MatchwalletAPI.setCurrentMatchwallet(lastMatchwallet);
+          };
+        }
+      ]
+    };
+  }
+]);/**
+ * @ngdoc directive
  * @name monthlyReports
  * @description
  * This directive contains all the required functions displaying monthly reports
@@ -9380,7 +12284,7 @@ angular.module('BitGo.Enterprise.MonthlyReportsDirective', []).directive('monthl
             var reportStart = reportInfoObj.startTime;
             var reportParams = {
                 walletAddress: wallet.data.id,
-                start: reportStart,
+                start: Number(reportStart),
                 period: 'month',
                 format: 'pdf'
               };
@@ -9489,239 +12393,284 @@ angular.module('BitGo.Enterprise.MonthlyReportsDirective', []).directive('monthl
       ]
     };
   }
-]);/**
- * @ngdoc controller
- * @name PersonalSettingsController
- * @description
- * This controls the view for the personal wallet settings page and
-   all subsections (it uses bg-state-manager) to handle template swapping
- */
-angular.module('BitGo.Enterprise.PersonalSettingsController', []).controller('PersonalSettingsController', [
-  '$scope',
-  'InternalStateService',
-  function ($scope, InternalStateService) {
-    // The viewStates within the settings for personal wallets
-    $scope.viewStates = ['users'];
-    // The current view section
-    $scope.state = undefined;
-    // sets the template to use based on the section
-    $scope.enterpriseSettingsTemplateSource = null;
-    // gets the view template based on the $scope's currentSection
-    function getTemplate() {
-      if (!$scope.state || _.indexOf($scope.viewStates, $scope.state) === -1) {
-        throw new Error('Expect $scope.state to be defined when setting template for enterprise settings');
-      }
-      var tpl;
-      switch ($scope.state) {
-      case 'users':
-        tpl = 'enterprise/templates/settings-partial-users.html';
-        break;
-      }
-      return tpl;
-    }
-    // Events Handlers
-    // Watch for changes in the $scope's state and set the view's template
-    var killStateWatch = $scope.$watch('state', function () {
-        $scope.enterpriseSettingsTemplateSource = getTemplate();
-      });
-    // Clean up the listeners when the scope is destroyed
-    $scope.$on('$destroy', function () {
-      killStateWatch();
-    });
-    $scope.setSubState = function () {
-      $scope.$broadcast('EnterpriseSettingsController.showAllUsers');
-    };
-    function init() {
-      $scope.state = InternalStateService.getInitState($scope.viewStates) || 'users';
-      $scope.enterpriseSettingsTemplateSource = getTemplate();
-    }
-    init();
-  }
-]);angular.module('BitGo.Enterprise.SettingsAddUserFormDirective', []).directive('addUserForm', [
+]);angular.module('BitGo.Identity.CreateFormDirective', []).directive('identityCreateForm', [
   '$rootScope',
-  '$q',
-  'UserAPI',
-  'NotifyService',
-  'KeychainsAPI',
-  'UtilityService',
-  '$modal',
-  'WalletSharesAPI',
-  '$filter',
-  'BG_DEV',
-  function ($rootScope, $q, UserAPI, Notify, KeychainsAPI, UtilityService, $modal, WalletSharesAPI, $filter, BG_DEV) {
+  function ($rootScope) {
     return {
       restrict: 'A',
+      require: '^IdentityController',
       controller: [
         '$scope',
         function ($scope) {
-          var params;
           function formIsValid() {
-            if (!$scope.email) {
-              $scope.setFormError('Please enter an email address.');
+            if (!$scope.identity.name || $scope.identity.name === $rootScope.currentUser.settings.email.email) {
+              $scope.setFormError('Please enter your legal name.');
               return false;
             }
-            if (!$scope.walletId) {
-              $scope.setFormError('Please choose a wallet to share.');
+            var phone = $scope.identity.phone;
+            if (!phone) {
+              $scope.setFormError('Please enter your phone number.');
               return false;
             }
-            if (!$scope.role) {
-              $scope.setFormError('Please set a role for the user.');
+            if (phone[0] !== '+') {
+              phone = '+'.concat(phone);
+            }
+            if (!intlTelInputUtils.isValidNumber(phone)) {
+              $scope.setFormError('Please enter a valid phone number.');
+              return false;
+            }
+            if (!$scope.agree) {
+              $scope.setFormError('Please agree to the terms and conditions');
               return false;
             }
             return true;
           }
-          $scope.saveAddUserForm = function () {
-            if (!$scope.message) {
-              $scope.message = 'I\'d like to invite you to join a wallet on BitGo.';
+          $scope.submitForm = function submitForm() {
+            if (!formIsValid()) {
+              return;
             }
-            // clear any errors
-            $scope.clearFormError();
-            if (formIsValid()) {
-              UserAPI.sharingkey({ email: $scope.email }).then(function (data) {
-                params = {
-                  user: data.userId,
-                  permissions: $filter('bgPermissionsRoleConversionFilter')($scope.role, true),
-                  message: $scope.message
-                };
-                $scope.otp = $scope.otp || '';
-                if ($scope.role === BG_DEV.WALLET.ROLES.SPEND || $scope.role === BG_DEV.WALLET.ROLES.ADMIN) {
-                  params.keychain = {
-                    xpub: $rootScope.wallets.all[$scope.walletId].data.private.keychains[0].xpub,
-                    toPubKey: data.pubkey,
-                    path: data.path
-                  };
-                  return $scope.shareWallet(params);
-                }
-                return WalletSharesAPI.createShare($scope.walletId, params).then($scope.onAddUserSuccess);
-              }).catch(function (error) {
-                if (error.error === 'key not found') {
-                  Notify.error($scope.email + ' has not yet set up a BitGo account. Please have ' + $scope.email + ' sign up and log in to BitGo.');
-                } else {
-                  Notify.error(error.error);
-                }
-              });
-            }
+            // Set to true when synapse iframe is set visible
+            $scope.submitted = true;
+            $scope.createIdentity();
           };
         }
       ]
     };
   }
-]);angular.module('BitGo.Enterprise.SettingsUsersManagerDirective', []).directive('settingsUsersManager', [
+]);angular.module('BitGo.Identity.IdentityController', []).controller('IdentityController', [
+  '$rootScope',
+  '$scope',
+  '$modal',
+  '$location',
+  '$q',
+  'SettingsAPI',
+  'IdentityAPI',
   'UtilityService',
   'NotifyService',
-  'WalletsAPI',
-  'RequiredActionService',
   'BG_DEV',
-  function (Util, Notify, WalletsAPI, RequiredActionService, BG_DEV) {
-    return {
-      restrict: 'A',
-      require: '^EnterpriseSettingsController',
-      controller: [
-        '$scope',
-        '$rootScope',
-        function ($scope, $rootScope) {
-          // view states for the user settings area
-          $scope.viewStates = [
-            'showAllUsers',
-            'showOneUser',
-            'addUser'
-          ];
-          // the current view state
-          $scope.state = null;
-          // template source for the current view
-          $scope.userSettingsTemplateSource = null;
-          // An enterprise user who was selected to view in detail
-          $scope.selectedUser = null;
-          // returns the view current view template (based on the $scope's current state)
-          function getTemplate() {
-            if (!$scope.state || _.indexOf($scope.viewStates, $scope.state) === -1) {
-              throw new Error('Expect $scope.state to be defined when setting template for enterprise settings');
-            }
-            var tpl;
-            switch ($scope.state) {
-            case 'showAllUsers':
-              tpl = 'enterprise/templates/settings-partial-users-list.html';
-              break;
-            case 'showOneUser':
-              tpl = 'enterprise/templates/settings-partial-users-manageuser.html';
-              break;
-            case 'addUser':
-              tpl = 'enterprise/templates/settings-partial-users-adduser.html';
-              break;
-            }
-            return tpl;
-          }
-          // Fires when an admin selects an Enterprise user to view in detail
-          $scope.selectUser = function (userId, walletsAccessibleByUser) {
-            $scope.selectedUserId = userId;
-            $scope.setState('showOneUser');
-          };
-          // Event listeners
-          var killStateWatch = $scope.$watch('state', function (state) {
-              if (state) {
-                // If the user has a weak login password and is trying to add a user
-                // we force them to upgrade it before they can add someone
-                if (state === 'addUser' && RequiredActionService.hasAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW)) {
-                  return RequiredActionService.runAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW);
-                }
-                // Otherwise set the template as needed
-                $scope.userSettingsTemplateSource = getTemplate();
-              }
-            });
-          // Listener cleanup
-          $scope.$on('$destroy', function () {
-            killStateWatch();
-          });
-          // Watch for click on users tab in parent element
-          $scope.$on('EnterpriseSettingsController.showAllUsers', function () {
-            $scope.state = 'showAllUsers';
-          });
-          $scope.revokeAccess = function (bitcoinAddress, userId) {
-            WalletsAPI.revokeAccess(bitcoinAddress, userId).then(revokeAccessSuccess).catch(Notify.errorHandler);
-          };
-          $scope.canDelete = function (userId) {
-            return userId && userId !== $rootScope.currentUser.settings.id;
-          };
-          function revokeAccessSuccess(wallet) {
-            WalletsAPI.getAllWallets();
-            if (wallet.adminCount > 1) {
-              Notify.success('Pending approval sent for revoking wallet access.');
-            } else {
-              Notify.success('Wallet access was revoked.');
-            }
-          }
-          function init() {
-            $scope.state = 'showAllUsers';
-          }
-          init();
-        }
-      ]
+  function ($rootScope, $scope, $modal, $location, $q, SettingsAPI, IdentityAPI, Util, Notify, BG_DEV) {
+    // Get name and phone user settings objects
+    var settings = $rootScope.currentUser.settings || {};
+    var name = settings.name || {};
+    var phone = settings.phone || {};
+    var email = settings.email || {};
+    // User must agree to ToS
+    $scope.agree = false;
+    // Identity user submitted to identity/create
+    $scope.identity = {
+      fingerprint: null,
+      oauth_key: null,
+      name: name.full,
+      phone: phone.phone
     };
-  }
-]);angular.module('BitGo.Interceptors.AuthTokenInterceptor', []).factory('AuthTokenInterceptor', [
-  '$q',
-  '$injector',
-  function ($q, $injector) {
-    return {
-      request: function (config) {
-        var CacheService = $injector.get('CacheService');
-        config.headers = config.headers || {};
-        // If we have access to the browser's session storage, we
-        // stored the token there. However, if we didn't have access to
-        // to it, we set the token on $rootScope
-        var tokenCache = CacheService.getCache('Tokens');
-        var token = tokenCache && tokenCache.get('token');
-        if (token) {
-          config.headers.Authorization = 'Bearer ' + token;
+    // Reset name if its the same as the user's email address
+    if (name.full === email.email) {
+      $scope.identity.name = null;
+    }
+    // Show a verification error and return to /settings
+    function verifyError(error) {
+      error = (error || {}).error || error || 'Verification failed';
+      Notify.error(error);
+      $location.path('/settings');
+    }
+    // Custom retry time moment string
+    function retryTimeString(retryTime) {
+      return retryTime ? moment(retryTime).fromNow().replace(/in a day/, 'tomorrow') : null;
+    }
+    function openModal(params) {
+      return $modal.open({
+        templateUrl: params.url,
+        controller: 'ModalController',
+        resolve: {
+          locals: function () {
+            return _.merge({
+              type: BG_DEV.MODAL_TYPES[params.type],
+              userAction: BG_DEV.MODAL_USER_ACTIONS[params.type]
+            }, params.locals);
+          }
         }
-        return config;
-      },
-      response: function (response) {
-        return response || $q.when(response);
+      }).result;
+    }
+    function onCreateIdentitySuccess(oauth_key) {
+      if (!oauth_key) {
+        return;
       }
+      $scope.identity.oauth_key = oauth_key;
+      // Set up iframe
+      angular.element(document.body).addClass('identityDocumentVerification');
+      setupKYCIframe({
+        userInfo: {
+          oauth_key: $scope.identity.oauth_key,
+          fingerprint: $scope.identity.fingerprint,
+          v3: true
+        },
+        development_mode: !_.includes([
+          'test',
+          'prod'
+        ], BitGoConfig.env.getSDKEnv())
+      });
+      // Return promisified event callback
+      // Synapse will send our window object a message event when
+      // identity verification is completed or cancelled
+      var d = $q.defer();
+      $(window).one('message', d.resolve);
+      return d.promise.then(function (event) {
+        if (!event) {
+          return;
+        }
+        try {
+          if (event.originalEvent) {
+            event = event.originalEvent;
+          }
+          $(document.body).removeClass('identityDocumentVerification');
+          // Here we get some data back from Synapse including
+          // results of the identity verification
+          var data = JSON.parse(event.data);
+          if (data.success) {
+            // Enforce no duplicate identities
+            return IdentityAPI.verifyIdentity($scope.identity.oauth_key).then(SettingsAPI.get).then(function () {
+              Notify.success('You\'re verified!');
+              $location.path('/settings');
+            });
+          } else if (data.cancel) {
+            // User canceled
+            verifyError('Verification canceled');
+          } else {
+            // Create account with KYC service
+            return IdentityAPI.createIdentity({ fingerprint: ident.fingerprint }).then(function (oauth_key) {
+              if (!oauth_key) {
+                return;
+              }
+              ident.oauth_key = oauth_key;
+              // Set up iframe
+              angular.element(document.body).addClass('identityDocumentVerification');
+              setupKYCIframe({
+                userInfo: {
+                  oauth_key: ident.oauth_key,
+                  fingerprint: ident.fingerprint,
+                  v3: true
+                },
+                development_mode: !BitGoConfig.env.isProd()
+              });
+              // Return promisified event callback
+              // Synapse will send our window object a message event when
+              // identity verification is completed or cancelled
+              var d = $q.defer();
+              $(window).one('message', d.resolve);
+              return d.promise;
+            }).then(function (event) {
+              if (!event) {
+                return;
+              }
+              try {
+                if (event.originalEvent) {
+                  event = event.originalEvent;
+                }
+                $(document.body).removeClass('identityDocumentVerification');
+                // Here we get some data back from Synapse including
+                // results of the identity verification
+                var data = JSON.parse(event.data);
+                if (data.success) {
+                  // Enforce no duplicate identities
+                  return IdentityAPI.verifyIdentity(ident.oauth_key).then(SettingsAPI.get).then(function () {
+                    Notify.success('You\'re verified!');
+                    $location.path('/settings');
+                  });
+                } else if (data.cancel) {
+                  // User canceled
+                  verifyError('Verification canceled');
+                } else {
+                  // Something went wrong
+                  verifyError();
+                }
+              } catch (error) {
+                console.log(error, event);
+                verifyError();
+              }
+            }).catch(function (error) {
+              openModal({
+                url: 'identity/templates/identity-verification-failed-partial.html',
+                type: 'identityVerificationFailed',
+                locals: { retryTime: retryTimeString(error.retryTime) }
+              }).then(function () {
+                $location.path('/settings');
+              });
+            });
+          }
+        } catch (error) {
+          console.log(error, event);
+          verifyError();
+        }
+      }).catch(onCreateIdentityFail);
+    }
+    function onCreateIdentityFail(error) {
+      if (Util.API.isOtpError(error)) {
+        openModal({
+          url: 'modal/templates/modalcontainer.html',
+          type: 'otp'
+        }).then(function (data) {
+          if (data.type === 'otpsuccess') {
+            $scope.createIdentity();
+          }
+        }).catch(onCreateIdentityFail);
+      } else if (error.retryTime) {
+        openModal({
+          url: 'identity/templates/identity-verification-failed-partial.html',
+          type: 'identityVerificationFailed',
+          locals: { retryTime: retryTimeString(error.retryTime) }
+        }).then(function () {
+          $location.path('/settings');
+        });
+      } else if (error == 'cancel') {
+        verifyError('Verification canceled');
+      } else {
+        verifyError(error);
+      }
+    }
+    $scope.createIdentity = function createIdentity() {
+      // Get browser fingerprint
+      var d = $q.defer();
+      new Fingerprint2().get(d.resolve);
+      d.promise.then(function (fingerprint) {
+        $scope.identity.fingerprint = fingerprint;
+        return IdentityAPI.createIdentity($scope.identity);
+      }).catch(onCreateIdentityFail).then(onCreateIdentitySuccess);
     };
+    var killNameWatcher = $rootScope.$watch('currentUser.settings.name.full', function (name) {
+        if (!$rootScope.currentUser.settings.email || $rootScope.currentUser.settings.email.email !== name) {
+          $scope.identity.name = name;
+        }
+      });
+    var killPhoneWatcher = $rootScope.$watch('currentUser.settings.phone.phone', function (phone) {
+        $scope.identity.phone = phone;
+      });
+    var killIdentityWatcher = $rootScope.$watch('currentUser.settings.identity.verified', function (verified) {
+        // Redirect to settings page if user is already verified
+        if (verified) {
+          $location.path('/settings');
+        }
+      });
+    $scope.$on('$destroy', function () {
+      angular.element(document.body).removeClass('identityDocumentVerification');
+      killNameWatcher();
+      killPhoneWatcher();
+      killIdentityWatcher();
+    });
+    function init() {
+      $rootScope.setContext('identityVerification');
+    }
+    init();
   }
-]);angular.module('BitGo.Interceptors.BrowserInterceptor', []).factory('BrowserInterceptor', [
+]);/**
+ * @ngdoc overview
+ * @name BitGo.Identity
+ * @description Handles identity verification
+ */
+angular.module('BitGo.Identity', [
+  'BitGo.Identity.IdentityController',
+  'BitGo.Identity.CreateFormDirective'
+]);/* istanbul ignore next */
+angular.module('BitGo.Interceptors.BrowserInterceptor', []).factory('BrowserInterceptor', [
   '$q',
   '$location',
   function ($q, $location) {
@@ -9745,82 +12694,7 @@ angular.module('BitGo.Enterprise.PersonalSettingsController', []).controller('Pe
   control gets in to the Service (API) layer (e.g. sometimes we want to
    decorate the response or redirect based on auth tokens, etc...)
 */
-angular.module('BitGo.Interceptors', [
-  'BitGo.Interceptors.AuthTokenInterceptor',
-  'BitGo.Interceptors.VerificationInterceptor',
-  'BitGo.Interceptors.BrowserInterceptor',
-  'BitGo.Interceptors.NetworkBusyInterceptor'
-]);angular.module('BitGo.Interceptors.NetworkBusyInterceptor', []).factory('NetworkBusyInterceptor', [
-  '$q',
-  '$rootScope',
-  '$injector',
-  function ($q, $rootScope, $injector) {
-    $rootScope.networkRequests = 0;
-    return {
-      responseError: function (rejection) {
-        // To avoid a circular dependency, use $injector to grab the service now
-        var UserAPI = $injector.get('UserAPI');
-        if (rejection.data && rejection.data.error) {
-          // Error when there is an invalid access_token and the request
-          // tried to access protected data. Distinctly different from a
-          // 'needs OTP' error
-          if (rejection.data.error === 'Authorization required') {
-            UserAPI.endSession();
-          }
-        }
-        return $q.reject(rejection);
-      }
-    };
-  }
-]);angular.module('BitGo.Interceptors.VerificationInterceptor', []).factory('VerificationInterceptor', [
-  '$q',
-  '$location',
-  '$injector',
-  '$rootScope',
-  '$timeout',
-  function ($q, $location, $injector, $rootScope, $timeout) {
-    return {
-      response: function (response) {
-        var Util = $injector.get('UtilityService');
-        var currentUser = $rootScope.currentUser;
-        // URLs we want to check against for user phone/email verification
-        var isCurrentUserFetch = response.config.url.indexOf('/user/me') !== -1;
-        var isLoginDetailsFetch = response.config.url.indexOf('/user/login') !== -1;
-        // Scrub any phone-or-email-verification-originated params from the url
-        function scrubUrl() {
-          Util.Url.scrubQueryString('phone');
-          Util.Url.scrubQueryString('email');
-        }
-        if (isCurrentUserFetch || isLoginDetailsFetch) {
-          // ensure response.user exists
-          if (!response.data.user) {
-            throw new Error('missing ressponse.data.user - data package changed');
-          }
-          var state;
-          if (response.data.user.phone && !response.data.user.phone.verified) {
-            state = 'verifyPhone';
-          }
-          if (response.data.user.phone && response.data.user.phone.phone === '') {
-            state = 'setPhone';
-          }
-          if (response.data.user.email && !response.data.user.email.verified) {
-            state = 'needsEmailVerify';
-          }
-          // scrub url before setting a new verification link
-          scrubUrl();
-          if (state) {
-            $location.path('/login').search(state, true);
-          } else {
-            if (currentUser) {
-              currentUser.setProperty({ hasAccess: true });
-            }
-          }
-        }
-        return response || $q.when(response);
-      }
-    };
-  }
-]);/**
+angular.module('BitGo.Interceptors', ['BitGo.Interceptors.BrowserInterceptor']);/**
  * @ngdoc directive
  * @name jobsManager
  * @description
@@ -9917,15 +12791,13 @@ angular.module('BitGo.Marketing.JobsManagerDirective', []).directive('jobsManage
  * Manages logic for the BitGo main landing page
  */
 angular.module('BitGo.Marketing.MarketingController', []).controller('MarketingController', [
-  '$timeout',
   '$location',
   '$scope',
   '$rootScope',
-  '$anchorScroll',
   'NotifyService',
   'EnterpriseAPI',
   'BG_DEV',
-  function ($timeout, $location, $scope, $rootScope, $anchorScroll, NotifyService, EnterpriseAPI, BG_DEV) {
+  function ($location, $scope, $rootScope, NotifyService, EnterpriseAPI, BG_DEV) {
     // We have one controller for all of the marketing pages, so we track
     // context switches using this URL-context map
     var URL_CONTEXT_MAP = {
@@ -9941,11 +12813,14 @@ angular.module('BitGo.Marketing.MarketingController', []).controller('MarketingC
         '/cases': BG_DEV.APP_CONTEXTS.marketingCases,
         '/about': BG_DEV.APP_CONTEXTS.marketingAbout,
         '/services_agreement': BG_DEV.APP_CONTEXTS.marketingServicesAgreement,
-        '/pricing': BG_DEV.APP_CONTEXTS.marketingPricing,
-        '/sla': BG_DEV.APP_CONTEXTS.marketingSla
+        '/sla': BG_DEV.APP_CONTEXTS.marketingSla,
+        '/api-pricing': BG_DEV.APP_CONTEXTS.marketingApiPricing
       };
+    $scope.plans = BG_DEV.ENTERPRISE.SUPPORT_PLAN_LEVELS;
     // the user info object that is submitted when someone inquires about API or platform
     $scope.userInfo = null;
+    // ServicesAgreement change whenever new version is updated
+    $scope.ServicesAgreementSource = 'marketing/templates/services_agreement_v1.html';
     // Slide quotes for the landing page
     $scope.slides = [
       {
@@ -9974,9 +12849,9 @@ angular.module('BitGo.Marketing.MarketingController', []).controller('MarketingC
       },
       {
         msg: 'The safety of our clients\u2019 funds is our number one priority. BitGo\'s secure wallet and API allow us to innovate without compromising on our very high security standards.',
-        person: 'Joseph Lee',
-        company: 'BTC.sx',
-        position: 'CEO'
+        person: 'Joe Lee',
+        company: 'Magnr',
+        position: 'CIO'
       }
     ];
     /**
@@ -10011,6 +12886,8 @@ angular.module('BitGo.Marketing.MarketingController', []).controller('MarketingC
         }).catch(function () {
           NotifyService.error('There was an issue with submitting your form. Can you please try that again?');
         });
+      } else {
+        NotifyService.error('Please fill in email address before submitting');
       }
     };
     function init() {
@@ -10063,6 +12940,378 @@ angular.module('BitGo.Marketing.PressManagerDirective', []).directive('pressMana
       ]
     };
   }]);/**
+ * @ngdoc controller
+ * @name MatchwalletController
+ * @description
+ * Controls the view state of the match wallet module.
+ **/
+angular.module('BitGo.Matchwallet.MatchwalletController', []).controller('MatchwalletController', [
+  '$scope',
+  'MatchwalletAPI',
+  function ($scope, MatchwalletAPI) {
+    // viewstates for the send flow
+    $scope.viewStates = [
+      'prepare',
+      'confirmAndSend'
+    ];
+    // current view state
+    $scope.state = 'prepare';
+    // Matchwallet template helper
+    $scope.canSendInvites = MatchwalletAPI.canSendInvites;
+  }
+]);// Module that manages match wallets and invitations
+angular.module('BitGo.Matchwallet', [
+  'BitGo.Matchwallet.MatchwalletController',
+  'BitGo.Matchwallet.MatchwalletRewardWalletDirective',
+  'BitGo.Matchwallet.MatchwalletSendManagerDirective',
+  'BitGo.Matchwallet.MatchwalletSendStepsPrepareDirective',
+  'BitGo.Matchwallet.MatchwalletSendStepsConfirmDirective'
+]);/**
+ * @ngdoc directive
+ * @name matchwalletRewardWallet
+ * @description
+ * Directive to manage selecting a reward wallet
+ * @example
+ *   <div matchwallet-reward-wallet></div>
+ */
+angular.module('BitGo.Matchwallet.MatchwalletRewardWalletDirective', []).directive('matchwalletRewardWallet', [
+  '$rootScope',
+  'MatchwalletAPI',
+  function ($rootScope, MatchwalletAPI) {
+    return {
+      restrict: 'A',
+      templateUrl: 'matchwallet/templates/matchwallet-reward-wallet-partial.html',
+      controller: [
+        '$scope',
+        function ($scope) {
+          $scope.isCurrentRewardWallet = function (wallet) {
+            if ($rootScope.matchwallets && $rootScope.matchwallets.current) {
+              return $rootScope.matchwallets.current.data.rewardWalletId === wallet.data.id;
+            } else if (_.isEmpty($rootScope.matchwallets.all)) {
+              return $scope.rewardWalletId === wallet.data.id;
+            }
+          };
+          function init() {
+            if ($rootScope.matchwallets && $rootScope.matchwallets.current) {
+              $scope.rewardWalletId = $rootScope.matchwallets.current.data.rewardWalletId;
+            } else if ($rootScope.wallets) {
+              $scope.rewardWalletId = _.findLastKey($rootScope.wallets.all);
+            }
+          }
+          init();
+        }
+      ]
+    };
+  }
+]);/**
+ * @ngdoc directive
+ * @name matchwalletSendManager
+ * @description
+ * Manages the state of the invitation send flow
+ **/
+angular.module('BitGo.Matchwallet.MatchwalletSendManagerDirective', []).directive('matchwalletSendManager', [
+  '$rootScope',
+  '$location',
+  'BG_DEV',
+  'AnalyticsProxy',
+  function ($rootScope, $location, BG_DEV, AnalyticsProxy) {
+    return {
+      restrict: 'A',
+      require: '^MatchwalletController',
+      controller: [
+        '$scope',
+        function ($scope) {
+          // Invitation default values
+          var INVITATION_MESSAGE = 'Try out a BitGo secure wallet with some free bitcoin :)';
+          // the invitation object built as the user goes through the send flow
+          $scope.invitation = null;
+          // Cancel the invitation send flow
+          $scope.cancelSend = function () {
+            AnalyticsProxy.track('cancelInvitation', {
+              type: 'matchwallet',
+              invitation: !!$rootScope.invitation
+            });
+            $location.path('/enterprise/personal/wallets');
+          };
+          // Called to reset the send flow's state and local invitation object
+          $scope.resetSendManager = function () {
+            // reset the local state
+            setNewInvitationObject();
+            $scope.setState('prepare');
+          };
+          // resets the local, working version of the invitation object
+          function setNewInvitationObject() {
+            delete $scope.invitation;
+            // properties we can expect on the invitation object
+            $scope.invitation = {
+              matchwallet: null,
+              amount: BG_DEV.MATCHWALLET.MIN_INVITATION_AMOUNT,
+              email: null,
+              message: INVITATION_MESSAGE
+            };
+          }
+          function init() {
+            $rootScope.setContext('matchwalletSend');
+            setNewInvitationObject();
+          }
+          init();
+        }
+      ]
+    };
+  }
+]);/**
+ * @ngdoc directive
+ * @name matchwalletSendStepsConfirm
+ * @description
+ * Manages the send invitation confirmation step.
+ **/
+angular.module('BitGo.Matchwallet.MatchwalletSendStepsConfirmDirective', []).directive('matchwalletSendStepsConfirm', [
+  '$q',
+  '$timeout',
+  '$rootScope',
+  '$location',
+  'NotifyService',
+  'MatchwalletAPI',
+  'UtilityService',
+  'SDK',
+  'BG_DEV',
+  'AnalyticsProxy',
+  function ($q, $timeout, $rootScope, $location, NotifyService, MatchwalletAPI, UtilityService, SDK, BG_DEV, AnalyticsProxy) {
+    return {
+      restrict: 'A',
+      require: '^matchwalletSendManager',
+      controller: [
+        '$scope',
+        function ($scope) {
+          // Max wallet sync fetch retries allowed
+          var MAX_WALLET_SYNC_FETCHES = 5;
+          // count for wallet sync data fetches
+          var syncCounter;
+          // flag letting us know when the invitation has been sent
+          $scope.invitationSent = null;
+          // state for the ui buttons to be diabled
+          $scope.processing = null;
+          // flag set if last invitation was sent
+          $scope.lastInvitationSent = false;
+          $scope.goToActivityFeed = function () {
+            $location.path('/enterprise/personal/activity');
+          };
+          // Resets all the local state on this scope
+          function resetLocalState() {
+            $scope.invitationSent = null;
+          }
+          function handleInvitationSendError(error) {
+            $scope.processing = false;
+            if (error && error.error) {
+              NotifyService.errorHandler(error);
+              return;
+            }
+            NotifyService.error('Your invitation was unable to be processed. Please refresh your page and try sending again.');
+          }
+          function openModal(params) {
+            return $modal.open({
+              templateUrl: params.url,
+              controller: 'ModalController',
+              scope: $scope,
+              resolve: {
+                locals: function () {
+                  return _.merge({
+                    type: BG_DEV.MODAL_TYPES[params.type],
+                    userAction: BG_DEV.MODAL_USER_ACTIONS[params.type]
+                  }, params.locals);
+                }
+              }
+            }).result;
+          }
+          /**
+         * Fetch a wallet to sync it's balance/data with the latest data from the server
+         * based on the user's recent action taken
+         */
+          function syncCurrentMatchwallet() {
+            if (syncCounter >= MAX_WALLET_SYNC_FETCHES) {
+              return;
+            }
+            var params = { id: $rootScope.matchwallets.current.data.id };
+            MatchwalletAPI.getMatchwallet(params, false).then(function (matchwallet) {
+              // If the new balance hasn't been picked up yet on the backend, refetch
+              // to sync up the client's data
+              if (matchwallet.data.balance === $rootScope.matchwallets.current.data.balance) {
+                syncCounter++;
+                $timeout(function () {
+                  syncCurrentMatchwallet();
+                }, 2000);
+                return;
+              }
+              // Since we have a new balance on this wallet
+              // Fetch the latest wallet data
+              // (this will also update the $rootScope.currentMatchwallet)
+              MatchwalletAPI.getAllMatchwallets();
+              // reset the sync counter
+              syncCounter = 0;
+            });
+          }
+          /**
+         * Send invitation
+         *
+         * @returns {Object} promise for sending the invitation
+         */
+          $scope.sendInvitation = function () {
+            $scope.processing = true;
+            $scope.invitation.id = $rootScope.matchwallets.current.data.id;
+            return MatchwalletAPI.sendInvitation($scope.invitation).then(function (res) {
+              // Handle the success state in the UI
+              var balance = $rootScope.matchwallets.current.data.balance - $scope.invitation.amount;
+              if (balance < BG_DEV.MATCHWALLET.MIN_INVITATION_AMOUNT) {
+                $scope.lastInvitationSent = true;
+              }
+              $scope.invitationSent = true;
+              $scope.processing = false;
+              // Track successful send
+              AnalyticsProxy.track('sendInvitation', {
+                type: 'matchwallet',
+                amount: $scope.invitation.amount,
+                invitation: !!$rootScope.invitation
+              });
+              // Sync up the new balances data across the app
+              return syncCurrentMatchwallet();
+            }).catch(function (error) {
+              handleInvitationSendError(error);
+            });
+          };
+          // Cleans out the scope's invitation object and takes the user back to the first step
+          $scope.sendMoreInvites = function () {
+            AnalyticsProxy.track('sendMoreInvitations', {
+              type: 'matchwallet',
+              invitation: !!$rootScope.invitation
+            });
+            resetLocalState();
+            $scope.resetSendManager();
+          };
+          function init() {
+            if (!$scope.invitation) {
+              throw new Error('Expect a transaction object when initializing');
+            }
+            syncCounter = 0;
+            $scope.processing = false;
+          }
+          init();
+        }
+      ]
+    };
+  }
+]);/**
+ * @ngdoc directive
+ * @name matchwalletSendStepsPrepare
+ * @description
+ * Manages the send invitation prepare step.
+ **/
+angular.module('BitGo.Matchwallet.MatchwalletSendStepsPrepareDirective', []).directive('matchwalletSendStepsPrepare', [
+  '$q',
+  '$rootScope',
+  'NotifyService',
+  'CacheService',
+  'UtilityService',
+  'BG_DEV',
+  'AnalyticsProxy',
+  function ($q, $rootScope, NotifyService, CacheService, UtilityService, BG_DEV, AnalyticsProxy) {
+    return {
+      restrict: 'A',
+      require: '^matchwalletSendManager',
+      controller: [
+        '$scope',
+        function ($scope) {
+          var minAmount = _.string.numberFormat(BG_DEV.MATCHWALLET.MIN_INVITATION_AMOUNT / 100);
+          // form error constants
+          var ERRORS = {
+              invalidEmail: { msg: 'Please enter a valid email address.' },
+              sendToSelf: { msg: 'You cannot send to yourself.' },
+              invalidAmount: { msg: 'Please enter a valid amount.' },
+              insufficientFunds: { msg: 'Wallet does not contain enough funds to send this amount.' },
+              alreadyInvited: { msg: 'You have already sent an invitation to this email address.' },
+              invitationAmountTooSmall: { msg: 'The minimum invitation gift is ' + minAmount + ' bits' },
+              amountTooSmall: { msg: 'This transaction amount is too small to send.' }
+            };
+          // function to set error on form and turn off processing flag
+          function setErrorOnForm(errMsg) {
+            if (!errMsg || typeof errMsg !== 'string') {
+              throw new Error('Invalid form error');
+            }
+            $scope.setFormError(errMsg);
+          }
+          // Validate the transaciton input form
+          function invitationIsValid() {
+            var currentMatchwallet = $rootScope.matchwallets.current;
+            var currentMatchwalletId = currentMatchwallet.data.id;
+            var balance = currentMatchwallet.data.balance;
+            var alreadyInvited = currentMatchwallet.data.invitations.filter(function (invitation) {
+                return $scope.invitation.email == invitation.email;
+              });
+            // ensure a valid recipient address
+            if (!($scope.invitation.email || '').match(/^[^@]+@[^@]+$/)) {
+              setErrorOnForm(ERRORS.invalidEmail.msg);
+              return false;
+            }
+            // ensure they're not sending coins to this wallet's address
+            if ($scope.invitation.email == $rootScope.currentUser.settings.email.email) {
+              setErrorOnForm(ERRORS.sendToSelf.msg);
+              return false;
+            }
+            // ensure they're not sending coins to the same address multiple times
+            if (alreadyInvited.length) {
+              setErrorOnForm(ERRORS.alreadyInvited.msg);
+              return false;
+            }
+            // ensure a valid amount
+            if (!parseFloat($scope.invitation.amount)) {
+              setErrorOnForm(ERRORS.invalidAmount.msg);
+              return false;
+            }
+            // ensure they are not entering an amount greater than they're balance
+            if ($scope.invitation.amount > balance) {
+              setErrorOnForm(ERRORS.insufficientFunds.msg);
+              return false;
+            }
+            // ensure amount is greater than the minimum invitation value
+            if ($scope.invitation.amount < BG_DEV.MATCHWALLET.MIN_INVITATION_AMOUNT) {
+              setErrorOnForm(ERRORS.invitationAmountTooSmall.msg);
+              return false;
+            }
+            // ensure amount is greater than the minimum dust value
+            if ($scope.invitation.amount <= BG_DEV.TX.MINIMUM_BTC_DUST) {
+              setErrorOnForm(ERRORS.amountTooSmall.msg);
+              return false;
+            }
+            return true;
+          }
+          // advances the invitation state if the for and inputs are valid
+          $scope.advanceInvitation = function () {
+            $scope.clearFormError();
+            if (invitationIsValid()) {
+              AnalyticsProxy.track('prepareInvitation', {
+                type: 'matchwallet',
+                invitation: !!$rootScope.invitation
+              });
+              $scope.setState('confirmAndSend');
+            }
+            // The result of this function is only ever checked in tests.
+            // However, rather than return false, it is good practice to return a
+            // promise, since this function is asynchronous, and thus should
+            // always return a promise.
+            return $q(function (resolve, reject) {
+              return resolve(false);
+            });
+          };
+          function init() {
+            if (!$scope.invitation) {
+              throw new Error('Expect a invitation object when initializing');
+            }
+          }
+          init();
+        }
+      ]
+    };
+  }
+]);/**
  * @ngdoc directive
  * @name modalAccountDeactivation
  * @description 
@@ -10211,6 +13460,15 @@ angular.module('BitGo.Modals.ModalController', []).controller('ModalController',
       case BG_DEV.MODAL_TYPES.qrReceiveAddress:
         tpl = 'modal/templates/qrReceiveAddress.html';
         break;
+      case BG_DEV.MODAL_TYPES.ssReceiveAltCoin:
+        tpl = 'modal/templates/ssReceiveAltCoin.html';
+        break;
+      case BG_DEV.MODAL_TYPES.createWallet:
+        tpl = 'modal/templates/createWallet.html';
+        break;
+      case BG_DEV.MODAL_TYPES.fundWallet:
+        tpl = 'modal/templates/fundWallet.html';
+        break;
       default:
         tpl = 'modal/templates/default.html';
         break;
@@ -10233,6 +13491,71 @@ angular.module('BitGo.Modals.ModalController', []).controller('ModalController',
     }
     init();
   }
+]);angular.module('BitGo.Modals.ModalCreateWallet', []).directive('modalCreateWallet', [
+  'UtilityService',
+  'NotifyService',
+  'BG_DEV',
+  'AnalyticsProxy',
+  '$window',
+  '$location',
+  'RequiredActionService',
+  '$rootScope',
+  'MatchwalletAPI',
+  function (Util, NotifyService, BG_DEV, AnalyticsProxy, $window, $location, RequiredActionService, $rootScope, MatchwalletAPI) {
+    return {
+      restrict: 'A',
+      require: '^ModalController',
+      controller: [
+        '$scope',
+        function ($scope) {
+          $scope.invitationGiftPending = MatchwalletAPI.invitationGiftPending;
+          // Link off to the create new wallet flow
+          $scope.createNewWallet = function () {
+            // track the create flow kick-off
+            AnalyticsProxy.track('CreateWalletStarted');
+            // If the user has a weak login password, we force them to upgrade it
+            // before they can create any more wallets
+            if (RequiredActionService.hasAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW)) {
+              return RequiredActionService.runAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW);
+            }
+            try {
+              $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/wallets/create');
+              $scope.closeWithSuccess();
+            } catch (error) {
+              console.error('Expect $rootScope\'s current enterprise to be set.');
+            }
+          };
+        }
+      ]
+    };
+  }
+]);/**
+ * @ngdoc directive
+ * @name modalFundWalletDirective
+ * @description
+ * 
+ * Manages the modal which prompts users with a wallet and no Bitcoin to fund their wallets or to buy bitcoin
+ * Requires: ModalController
+ * @example
+ *   <div modal-fund-wallet></div>
+ * 
+ **/
+/* istanbul ignore next - modal controller covers all functionality*/
+angular.module('BitGo.Modals.ModalFundWallet', []).directive('modalFundWallet', [
+  '$rootScope',
+  function ($rootScope) {
+    return {
+      restrict: 'A',
+      require: '^ModalController',
+      controller: [
+        '$scope',
+        function ($scope) {
+          // Link off to the create new wallet flow
+          $scope.modalFundWallet = _.findKey($rootScope.wallets.all);
+        }
+      ]
+    };
+  }
 ]);/*
   Notes:
   - This module is for definition of all modal-specific controllers and
@@ -10245,7 +13568,10 @@ angular.module('BitGo.Modals', [
   'BitGo.Modals.ModalOtpPasswordFormDirective',
   'BitGo.Modals.ModalOfflineWarningDirective',
   'BitGo.Modals.ModalAccountDeactivationDirective',
-  'BitGo.Modals.ModalQrReceiveAddressDirective'
+  'BitGo.Modals.ModalQrReceiveAddressDirective',
+  'BitGo.Modals.ModalReceiveAltCoinDirective',
+  'BitGo.Modals.ModalCreateWallet',
+  'BitGo.Modals.ModalFundWallet'
 ]).run([
   '$rootScope',
   '$compile',
@@ -10399,7 +13725,8 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', []).directive('moda
   '$location',
   '$timeout',
   'CacheService',
-  function ($rootScope, Util, UserAPI, NotifyService, BG_DEV, KeychainsAPI, $q, WalletsAPI, $location, $timeout, CacheService) {
+  'SDK',
+  function ($rootScope, Util, UserAPI, NotifyService, BG_DEV, KeychainsAPI, $q, WalletsAPI, $location, $timeout, CacheService, SDK) {
     return {
       restrict: 'A',
       require: '^ModalController',
@@ -10422,6 +13749,8 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', []).directive('moda
           $scope.unlockTimeRemaining = 0;
           // unlock time to be displayed on the modal (with the countdown)
           $scope.prettyUnlockTime = '2-step verification unlocked';
+          // flag to indicate if a user has an otp device set
+          $scope.otpDeviceSet = !!$scope.user.settings.otpDevices.length;
           /**
          * Validate the password field of the form;
          * @private
@@ -10436,6 +13765,9 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', []).directive('moda
          */
           function otpIsValid() {
             if ($scope.userUnlocked) {
+              return true;
+            }
+            if (!$scope.otpDeviceSet) {
               return true;
             }
             return Util.Validators.otpOk($scope.form.otp);
@@ -10467,7 +13799,7 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', []).directive('moda
             return minutes + ':' + ('0' + seconds).slice(-2);
           }
           /**
-         * Function for counting down the unlock time. Sets the display variable on the scope for the UI 
+         * Function for counting down the unlock time. Sets the display variable on the scope for the UI
          */
           function onTimeout() {
             $scope.unlockTimeRemaining--;
@@ -10481,10 +13813,10 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', []).directive('moda
             timeOut = $timeout(onTimeout, 1000);
           }
           /**
-         * Starts the countdown  
+         * Starts the countdown
          */
           function startTimeout() {
-            if ($scope.userUnlocked) {
+            if ($scope.userUnlocked && $scope.otpDeviceSet) {
               if (unlockTimeCache.get('time')) {
                 var endUnlockTime = new Date(unlockTimeCache.get('time'));
                 var currentTime = new Date();
@@ -10505,7 +13837,7 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', []).directive('moda
             try {
               // Check if the keychain is present. If not, it is a cold wallet
               if (keychain.encryptedXprv) {
-                var privKey = Util.Crypto.sjclDecrypt(password, keychain.encryptedXprv);
+                var privKey = SDK.decrypt(password, keychain.encryptedXprv);
                 return { key: privKey };
               }
               return true;
@@ -10521,7 +13853,7 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', []).directive('moda
          */
           function decryptUserPrivKey(password, wallet) {
             try {
-              var privKey = Util.Crypto.sjclDecrypt(password, wallet.data.private.userPrivKey);
+              var privKey = SDK.decrypt(password, wallet.data.private.userPrivKey);
               return { key: privKey };
             } catch (e) {
               return undefined;
@@ -10583,7 +13915,11 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', []).directive('moda
          */
           $scope.forgotPassword = function () {
             $scope.closeWithError('cancel');
-            $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/wallets/' + $rootScope.wallets.current.data.id + '/recover');
+            if ($scope.isAcceptingShare) {
+              $location.path('/forgotpassword');
+            } else {
+              $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/wallets/' + $rootScope.wallets.current.data.id + '/recover');
+            }
           };
           /**
          * Function which verifies submitted password. Shows error if not valid or there's a decryption error
@@ -10678,6 +14014,129 @@ angular.module('BitGo.Modals.ModalQrReceiveAddressDirective', []).directive('mod
     };
   }
 ]);/**
+ * @ngdoc directive
+ * @name modalReceiveAltCoin
+ * @description
+ * Manages AltCoin receive process, it shows the dropdown with
+ * the different coins loaded, then when the user selects one of them
+ * it makes a call to the ssAPI to retreive the deposit address
+ * and the rate of conversion between pairs, it also shows a qr code with
+ * the generated address
+ */
+angular.module('BitGo.Modals.ModalReceiveAltCoinDirective', []).directive('modalReceiveAltCoin', [
+  '$rootScope',
+  function ($rootScope) {
+    return {
+      restrict: 'A',
+      require: '^ModalController',
+      controller: [
+        '$scope',
+        'ssAPI',
+        'NotifyService',
+        function ($scope, ssAPI, NotifyService) {
+          // Does an error happens inside the dropdown?
+          $scope.hasAltErrors = false;
+          // Its the dropdown unable to load the altcions?
+          $scope.unableToLoadAltCoins = false;
+          // Are we generating a receive address for the altCoin?
+          $scope.addressBeingGenerated = false;
+          // the transaction object built as the user goes request a new receive address
+          $scope.receiveAltCoin = {
+            altCoin: {
+              useAltCoin: false,
+              selected: null,
+              receive: true,
+              symbol: null,
+              rate: 0,
+              limit: 0,
+              min: 0,
+              minerFee: 0,
+              recipientAddress: $rootScope.wallets.current.data.id,
+              returnAddres: null,
+              depositAddress: null,
+              label: null,
+              ignoreList: ['BTC']
+            }
+          };
+          /**
+          Set the values to the current scope using the marketInfo response
+          @private setAltCoinValuesToScope
+          @param altCoin: Received data from ssAPI when calling the marketInfo api.
+        */
+          function setAltCoinValuesToScope(altCoin) {
+            $scope.receiveAltCoin.altCoin.rate = altCoin.rate;
+            $scope.receiveAltCoin.altCoin.limit = altCoin.limit;
+            $scope.receiveAltCoin.altCoin.min = altCoin.min;
+            $scope.receiveAltCoin.altCoin.minerFee = altCoin.minerFee;
+            $scope.receiveAltCoin.altCoin.symbol = altCoin.symbol;
+            $scope.receiveAltCoin.altCoin.label = $scope.receiveAltCoin.altCoin.selected;
+          }
+          /**
+        This method validates the shift response data, by cheking
+        the values on the response, if the data.error key is present
+        means that we receive an error from Shapeshift :(
+        @private validateShiftResponse
+        @param data: Incoming response when fetching data from ssAPI
+        */
+          function validateShiftResponse(data) {
+            // Something happens with Shapeshift? We should not hit
+            // this statement never.
+            if (_.isUndefined(data) || data === null) {
+              throw new Error('unableToGetDepositAddress');
+            }
+            // Does Shapeshift return an error? :(
+            if (!_.isUndefined(data.error)) {
+              // Let's raise the exception to be handled on the catch block
+              throw new Error(data.error);  // handled on the catch block
+            }
+          }
+          /**
+          When user change the type of coin we generate a new address for this
+          by calling the ShapeShift API, to retreive a deposit address for it
+          @public
+        */
+          $scope.changeCoin = function (altCoin) {
+            // Get the coin
+            $scope.receiveAltCoin.altCoin.selected = altCoin.name;
+            //var altCoin = ssAPI.getByName($scope.receiveAltCoin.altCoin.selected);
+            $scope.receiveAltCoin.altCoin.symbol = altCoin.symbol;
+            $scope.addressBeingGenerated = true;
+            $scope.hasAltErrors = false;
+            // Use the Shapeshift API to get market info like rates, and limits
+            ssAPI.getMarketInfo($scope.receiveAltCoin.altCoin.selected, true).then(function (altCoin) {
+              // Let's check the response
+              validateShiftResponse(altCoin);
+              // Fill required data for shapeshift exchange.
+              setAltCoinValuesToScope(altCoin);
+              // Let's get the deposit address from Shapeshift :)
+              var shiftParams = ssAPI.getShiftParams($scope.receiveAltCoin.altCoin);
+              return ssAPI.shift(shiftParams);
+            }).then(function (data) {
+              // Let's check the response
+              validateShiftResponse(data);
+              // Asign the received address from shapeshift to be displayed on screen
+              $scope.receiveAltCoin.altCoin.depositAddress = data.deposit;
+              $scope.receiveAltCoin.altCoin.useAltCoin = true;
+            }).catch(function (error) {
+              $scope.hasAltErrors = true;
+              // Try to find the error on the ShapeShift error dictionary, if the error is found means
+              // that a known error happens on the shapeshift flow.
+              var shapeshiftError = ssAPI.getError(error);
+              if (shapeshiftError !== null) {
+                // Show the error
+                NotifyService.error(shapeshiftError.msg);
+              } else {
+                NotifyService.errorHandler(error);
+              }
+            }).finally(function () {
+              $scope.addressBeingGenerated = false;
+            });
+          };
+        }
+      ]
+    };
+  }
+]);/**
  * @ngdoc service
  * @name SyncService
  * @description
@@ -10735,7 +14194,8 @@ angular.module('BitGo.Modals.ModalStateService', []).factory('ModalStateService'
 ]);// Model for Enterprises
 angular.module('BitGo.Models.EnterpriseModel', []).factory('EnterpriseModel', [
   '$rootScope',
-  function ($rootScope) {
+  'BG_DEV',
+  function ($rootScope, BG_DEV) {
     // Constant to define the 'personal' enterprise
     // Note: everything is scoped to an enterprise; thus wallets without
     // an enterprise (personal wallets) can be grouped under the 'personal' enterprise
@@ -10756,12 +14216,21 @@ angular.module('BitGo.Models.EnterpriseModel', []).factory('EnterpriseModel', [
       this.primaryContact = data.primaryContact;
       this.emergencyPhone = data.emergencyPhone;
       this.isPersonal = this.id === PERSONAL_ENTERPRISE.id && this.name === PERSONAL_ENTERPRISE.name;
+      this.latestSAVersionSigned = data.latestSAVersionSigned;
       this.walletCount = 0;
       this.balance = 0;
       this.walletShareCount = {
         incoming: 0,
         outgoing: 0
       };
+      this.supportPlan = data.supportPlan;
+      this.customerData = data.customerData;
+      // TODO Barath: A better way to check if the user is admin of an enterprise?
+      this.isAdmin = !!data.primaryContact;
+      // If the enterprise is personal, the user is an admin on it
+      if (this.isPersonal) {
+        this.isAdmin = true;
+      }
     }
     /**
      * Set the enterprise's overall balance based on all wallets
@@ -10879,25 +14348,32 @@ angular.module('BitGo.Models.EnterpriseModel', []).factory('EnterpriseModel', [
       }
     };
     /**
-    * Decorator: Adds approvals to the enterprise object (based on all wallets
-    * associated with the enterprise)
-    * @param wallets {Object} all wallets associated with this enterprise
+    * Decorator: Adds approvals to the enterprise object 
+    * @param approvals {Array} approvals associated with this enterprise
     * @returns {Int} num of keys in the enterprise's pending approval object
     * @public
     */
-    Enterprise.prototype.setApprovals = function (wallets) {
-      var result = {};
-      _.forIn(wallets, function (wallet) {
-        var approvals = wallet.data.pendingApprovals;
-        if (approvals) {
-          // Build the enterprise's pendingApprovals array
-          _.forEach(approvals, function (approval) {
-            result[approval.id] = approval;
-          });
-        }
+    Enterprise.prototype.setApprovals = function (approvals) {
+      if (!approvals) {
+        return;
+      }
+      if (!this.pendingApprovals) {
+        this.pendingApprovals = {};
+      }
+      var self = this;
+      _.forEach(approvals, function (approval) {
+        self.pendingApprovals[approval.id] = approval;
       });
-      this.pendingApprovals = result;
       return _.keys(this.pendingApprovals).length;
+    };
+    /**
+    * Check if an enterprise has a credit card on file
+    *
+    * @returns { Bool }
+    * @public
+    */
+    Enterprise.prototype.hasPaymentOnFile = function () {
+      return this.customerData && this.customerData.sources && this.customerData.sources.data && this.customerData.sources.data.length > 0;
     };
     /**
     * remove the pending approval from the enterprise
@@ -10912,10 +14388,17 @@ angular.module('BitGo.Models.EnterpriseModel', []).factory('EnterpriseModel', [
     };
     return { Enterprise: Enterprise };
   }
-]);angular.module('BitGo.Model', [
+]);// Model for Match Wallets
+angular.module('BitGo.Models.MatchwalletModel', []).factory('MatchwalletModel', function () {
+  function Matchwallet(matchwalletData) {
+    this.data = matchwalletData;
+  }
+  return { Matchwallet: Matchwallet };
+});angular.module('BitGo.Model', [
   'BitGo.Models.EnterpriseModel',
   'BitGo.Models.UserModel',
   'BitGo.Models.WalletModel',
+  'BitGo.Models.MatchwalletModel',
   'BitGo.Utility'
 ]);// Model for the App's Current User
 angular.module('BitGo.Models.UserModel', []).factory('UserModel', [
@@ -10938,7 +14421,8 @@ angular.module('BitGo.Models.UserModel', []).factory('UserModel', [
         phone: {
           phone: '',
           verified: false
-        }
+        },
+        otpDevices: []
       };
     /**
     * Constructor for user objects
@@ -10990,9 +14474,6 @@ angular.module('BitGo.Models.UserModel', []).factory('UserModel', [
     * @public
     */
     User.prototype.isGrandfathered = function () {
-      if (this.isEnterpriseCustomer()) {
-        return false;
-      }
       return this.plan.name === BG_DEV.USER.ACCOUNT_LEVELS.grandfathered.name;
     };
     /**
@@ -11002,9 +14483,6 @@ angular.module('BitGo.Models.UserModel', []).factory('UserModel', [
     * @public
     */
     User.prototype.isBasic = function () {
-      if (this.isEnterpriseCustomer()) {
-        return false;
-      }
       return this.plan.name === BG_DEV.USER.ACCOUNT_LEVELS.basic.name;
     };
     /**
@@ -11014,9 +14492,6 @@ angular.module('BitGo.Models.UserModel', []).factory('UserModel', [
     * @public
     */
     User.prototype.isPlus = function () {
-      if (this.isEnterpriseCustomer()) {
-        return false;
-      }
       return this.plan.name === BG_DEV.USER.ACCOUNT_LEVELS.plusMonthly.name;
     };
     /**
@@ -11026,7 +14501,33 @@ angular.module('BitGo.Models.UserModel', []).factory('UserModel', [
     * @public
     */
     User.prototype.isPro = function () {
-      return this.plan.name === BG_DEV.USER.ACCOUNT_LEVELS.proMonthly.name || this.isEnterpriseCustomer();
+      return this.plan.name === BG_DEV.USER.ACCOUNT_LEVELS.proMonthly.name;
+    };
+    /**
+     *  Check if the user has an Authy device
+     *  @returns { bool }
+     *  @public
+     */
+    User.prototype.isAuthyUser = function () {
+      if (this.settings.otpDevices.length > 0) {
+        var index = _.findIndex(this.settings.otpDevices, { 'type': 'authy' });
+        return index > -1;
+      }
+    };
+    /**
+    * Get the users phone
+    *
+    * @public
+    */
+    User.prototype.getPhone = function () {
+      var otpDevices = this.settings.otpDevices;
+      if (!this.isAuthyUser()) {
+        return false;
+      }
+      var index = function () {
+        return _.findIndex(otpDevices, { 'type': 'authy' });
+      };
+      return this.settings.otpDevices[index()].phone;
     };
     /**
     * Check if the user's phone is set
@@ -11039,15 +14540,6 @@ angular.module('BitGo.Models.UserModel', []).factory('UserModel', [
         return true;
       }
       return false;
-    };
-    /**
-    * Check if the user's phone is verified
-    *
-    * @returns { Bool }
-    * @public
-    */
-    User.prototype.phoneNotVerified = function () {
-      return !this.settings.phone.verified;
     };
     /**
     * Check if the user's email is set
@@ -11071,6 +14563,15 @@ angular.module('BitGo.Models.UserModel', []).factory('UserModel', [
       return !this.settings.email.verified;
     };
     /**
+    * Check if user has a credit card on file
+    *
+    * @returns { Bool }
+    * @public
+    */
+    User.prototype.hasPaymentOnFile = function () {
+      return this.settings.stripe && this.settings.stripe.customer && this.settings.stripe.customer.data && this.settings.stripe.customer.data.sources && this.settings.stripe.customer.data.sources.data.length > 0;
+    };
+    /**
     * Check if the user has access to use the app, or if they need to upgrade
     *
     * @returns { Bool }
@@ -11079,9 +14580,6 @@ angular.module('BitGo.Models.UserModel', []).factory('UserModel', [
     User.prototype.checkAccess = function () {
       // ensure they have a verified email first
       if (this.emailNotSet() || this.emailNotVerified()) {
-        return false;
-      }
-      if (this.phoneNotSet() || this.phoneNotVerified()) {
         return false;
       }
       return true;
@@ -11186,7 +14684,7 @@ angular.module('BitGo.Models.WalletModel', []).factory('WalletModel', [
         return false;
       }
       if (this.data.admin.policy && !this.data.admin.policy.rules) {
-        console.error('Missing polcy rules');
+        console.error('Missing policy rules');
         return false;
       }
       return true;
@@ -11594,11 +15092,6 @@ angular.module('BitGo.Proof.CompanyProofController', []).controller('CompanyProo
   'NotifyService',
   function ($scope, $rootScope, $location, $q, ProofsAPI, EnterpriseAPI, NotifyService) {
     var DEFAULT_PROOF_ID = 'latest';
-    var URL_ERROR_SOURCES = {
-        ENTERPRISE_NAME: 'enterprise name',
-        PROOF_ID: 'proof id',
-        INVALID_URL: 'invalid url'
-      };
     var ERROR_HANDLERS = {
         SERVER_INVALID_PROOF_ID: 'invalid proof id',
         SERVER_MISSING_ENTERPRISE: 'missing enterprise',
@@ -11606,6 +15099,10 @@ angular.module('BitGo.Proof.CompanyProofController', []).controller('CompanyProo
         CLIENT_INVALID_URL_FOR_REDIRECT: 'invalid url for redirect',
         CLIENT_NEEDS_REDIRECT_FROM_LATEST: 'needs redirect from latest'
       };
+    // Boolean wto check if url entered is valid
+    var validUrl = true;
+    // Data for user-specific liabilities
+    $scope.allUserLiabilities = [];
     // Holds the basic info for the current enterprise proof we're fetching
     $scope.currentEnterprise = undefined;
     // a pretty timestamp of the current enterprise proof
@@ -11631,8 +15128,16 @@ angular.module('BitGo.Proof.CompanyProofController', []).controller('CompanyProo
     * @private
     * @returns { Bool }
     */
-    $scope.isUserSpecificProofUrl = function () {
+    function isUserSpecificProofUrl() {
       return query && _.has(query, 'user');
+    }
+    /**
+    * Utility function to let us know if the url is right
+    * @public
+    * @returns { Bool }
+    */
+    $scope.isValidUrl = function () {
+      return validUrl && ($scope.allUserLiabilities.length || !isUserSpecificProofUrl());
     };
     $scope.toggleDetails = function (section) {
       if ($scope.detailsVisible === section) {
@@ -11659,7 +15164,6 @@ angular.module('BitGo.Proof.CompanyProofController', []).controller('CompanyProo
     /**
     * URL - Parses the URL for all data we need to instantiate the proof controller
     * @private
-    * @returns {Boolean} - returns true if proof page is specific to an enterprise. False if static page
     */
     function urlParseForParams() {
       // Valid / expected url formats:
@@ -11685,7 +15189,6 @@ angular.module('BitGo.Proof.CompanyProofController', []).controller('CompanyProo
       $scope.urlUserId = query.user;
       urlNonce = query.nonce;
       urlProofId = getProofIdFromUrl();
-      return true;
     }
     /**
     * URL - Return the ID of the Proof that we're fetching
@@ -11733,22 +15236,6 @@ angular.module('BitGo.Proof.CompanyProofController', []).controller('CompanyProo
       }
       // Otherwise simply fetch the proof id from the url
       return ProofsAPI.get(urlProofId);
-    }
-    /**
-    * URL - Handle errors generated by malformed / bad data in the url
-    * @param { String } source    source of the error
-    * @private
-    */
-    function urlHandleInvalidData(source) {
-      if (!source || !_.has(URL_ERROR_SOURCES, source)) {
-        throw new Error('invalid url error source');
-      }  // TODO - FINISH AFTER PAYMENT PUSH
-         // TODO - FINISH AFTER PAYMENT PUSH
-         // TODO - FINISH AFTER PAYMENT PUSH
-         // $scope.complete
-         // TODO - FINISH AFTER PAYMENT PUSH
-         // TODO - FINISH AFTER PAYMENT PUSH
-         // TODO - FINISH AFTER PAYMENT PUSH
     }
     /**
     * UI Helper - Generate ui-consumable proof object (currently we only support xbt)
@@ -11842,13 +15329,13 @@ angular.module('BitGo.Proof.CompanyProofController', []).controller('CompanyProo
       var liabilities = _.map(enterpriseProof.liabilities, function (liability) {
           liability = _.extend({}, liability);
           // Don't look up liability inclusion data if it's not a user-specific URL
-          if (!$scope.isUserSpecificProofUrl()) {
+          if (!isUserSpecificProofUrl()) {
             return liability;
           }
           var params = {
               hash: liability.rootHash,
               nonce: urlNonce || '',
-              userId: $scope.urlUserId
+              user: $scope.urlUserId
             };
           return ProofsAPI.getLiability(params).then(function (proof) {
             liability.proof = proof;
@@ -11894,23 +15381,19 @@ angular.module('BitGo.Proof.CompanyProofController', []).controller('CompanyProo
           // replace 'latest' in the url with the most recent enterprise proof id
           return $location.path(error.data.path).search(error.data.search);
         case ERROR_HANDLERS.CLIENT_FAIL_SINGLE_LIABILITY_BUILD:
-          // happens when a single user liability fails to validate on the client
-          // Fail state turns the UI balances boxes for the user red
-          break;
+        // happens when a single user liability fails to validate on the client
+        // Fail state turns the UI balances boxes for the user red
         case ERROR_HANDLERS.CLIENT_INVALID_URL_FOR_REDIRECT:
-          urlHandleInvalidData(URL_ERROR_SOURCES.INVALID_URL);
-          break;
         case ERROR_HANDLERS.SERVER_INVALID_PROOF_ID:
-          urlHandleInvalidData(URL_ERROR_SOURCES.PROOF_ID);
-          break;
         case ERROR_HANDLERS.SERVER_MISSING_ENTERPRISE:
-          urlHandleInvalidData(URL_ERROR_SOURCES.ENTERPRISE_NAME);
+          validUrl = false;
           break;
         default:
           NotifyService.error('There was an error verifying this proof of reserves. Please ensure the url is correct and refresh your page.');
           console.log('Failed proof: ', reason);
           break;
         }
+        $scope.loaded = true;
       });
     }
     // Initialize the proof controller
@@ -11923,151 +15406,6 @@ angular.module('BitGo.Proof.CompanyProofController', []).controller('CompanyProo
  * Manages all things dealing with proof of reserves
  */
 angular.module('BitGo.Proof', ['BitGo.Proof.CompanyProofController']);/**
- * @ngdoc directive
- * @name settingsAboutFormDirective
- * @description
- * Directive to manage the user settings. (delete and rename)
- * @example
- *   <div settings-about-form></div>
- */
-/**/
-angular.module('BitGo.Settings.AboutFormDirective', []).directive('settingsAboutForm', [
-  '$q',
-  '$rootScope',
-  '$location',
-  '$modal',
-  'UserAPI',
-  'UtilityService',
-  'NotifyService',
-  'BG_DEV',
-  'WalletsAPI',
-  'AnalyticsProxy',
-  function ($q, $rootScope, $location, $modal, UserAPI, Util, Notify, BG_DEV, WalletsAPI, AnalyticsProxy) {
-    return {
-      restrict: 'A',
-      require: '^SettingsController',
-      controller: [
-        '$scope',
-        function ($scope) {
-          var validate = Util.Validators;
-          $scope.settings = $rootScope.currentUser.settings;
-          function formIsValid() {
-            if (!$scope.settings.name.full) {
-              $scope.setFormError('Please enter a name.');
-              return false;
-            }
-            return true;
-          }
-          function onSaveAboutSuccess(settings) {
-            $scope.getSettings();
-          }
-          function onSaveAboutFail(error) {
-            if (Util.API.isOtpError(error)) {
-              $scope.openModal().then(function (data) {
-                if (data.type === 'otpsuccess') {
-                  $scope.saveAboutForm();
-                }
-              }).catch(unlockFail);
-            } else {
-              Notify.error(error.error);
-            }
-          }
-          function onLogoutSuccess() {
-            $location.path('/login');
-          }
-          function logoutUser() {
-            return UserAPI.logout();
-          }
-          $scope.hasChanges = function () {
-            if (!$scope.settings || !$scope.localSettings) {
-              return false;
-            }
-            if (!_.isEqual($scope.localSettings.name, $scope.settings.name)) {
-              return true;
-            }
-            if ($scope.localSettings.timezone !== $scope.settings.timezone) {
-              return true;
-            }
-            return false;
-          };
-          /**
-         *  Saves changes to the about form
-         *  @private
-         */
-          $scope.saveAboutForm = function () {
-            // clear any errors
-            $scope.clearFormError();
-            if (formIsValid()) {
-              var newSettings = {
-                  otp: $scope.otp,
-                  settings: {
-                    name: { full: $scope.settings.name.full },
-                    timezone: $scope.settings.timezone
-                  }
-                };
-              $scope.saveSettings(newSettings).then(onSaveAboutSuccess).catch(onSaveAboutFail);
-            }
-          };
-          /**
-         * Modal - Open a modal for user deactivation
-         * @private
-         */
-          function openModal(params) {
-            var modalInstance = $modal.open({
-                templateUrl: 'modal/templates/modalcontainer.html',
-                controller: 'ModalController',
-                scope: $scope,
-                resolve: {
-                  locals: function () {
-                    return {
-                      userAction: BG_DEV.MODAL_USER_ACTIONS.deactivationConfirmation,
-                      type: params.type
-                    };
-                  }
-                }
-              });
-            return modalInstance.result;
-          }
-          /**
-        * Called when the user confirms deactivation
-        *
-        * @private
-        */
-          $scope.confirmDeactivate = function () {
-            var userCacheEmpty = _.isEmpty(WalletsAPI.getAllWallets(true));
-            if (!userCacheEmpty) {
-              Notify.error('Please remove all wallets before deactivating account.');
-              return false;
-            } else {
-              openModal({ type: BG_DEV.MODAL_TYPES.deactivationConfirmation });
-            }
-          };
-          /**
-        * UI - Take the user to their account settings:plans page
-        *
-        * @public
-        */
-          $scope.goToPlans = function () {
-            AnalyticsProxy.track('clickUpsell', { type: 'aboutMe' });
-            $scope.setState('plans');
-          };
-          /**
-        * UI - Log event for user learning about billing
-        *
-        * @public
-        */
-          $scope.logViewInfo = function () {
-            var evtData = {
-                type: 'billing',
-                subSection: 'aboutMe'
-              };
-            AnalyticsProxy.track('viewInfo', evtData);
-          };
-        }
-      ]
-    };
-  }
-]);/**
  * @ngdoc directive
  * @name developersAccesstokenAddForm
  * @description
@@ -12120,7 +15458,7 @@ angular.module('BitGo.Settings.DevelopersAccesstokenAddFormDirective', []).direc
               {
                 name: 'wallet_create',
                 text: 'Create Wallets',
-                selected: false
+                selected: true
               }
             ];
           }
@@ -12161,10 +15499,6 @@ angular.module('BitGo.Settings.DevelopersAccesstokenAddFormDirective', []).direc
             }
             if (!$scope.tokenParams.txValueLimit || !$scope.tokenParams.txValueLimit.toString()) {
               $scope.setFormError('New tokens must have a specified spending limit.');
-              return false;
-            }
-            if ($scope.tokenParams.txValueLimit > BG_DEV.TX.MAXIMUM_BTC_SPENDING_LIMIT) {
-              $scope.setFormError('Spending limit is too large to use.');
               return false;
             }
             if (!$scope.tokenParams.duration) {
@@ -12316,17 +15650,33 @@ angular.module('BitGo.Settings.DevelopersAccesstokenAddFormDirective', []).direc
  * Manages the ui for adding/removing access tokens for the API
  */
 angular.module('BitGo.Settings.DevelopersFormDirective', []).directive('developersForm', [
-  '$rootScope',
-  'NotifyService',
   'AccessTokensAPI',
-  function ($rootScope, NotifyService, AccessTokensAPI) {
+  function (AccessTokensAPI) {
     return {
       restrict: 'A',
       require: '^SettingsController',
       controller: [
         '$scope',
         function ($scope) {
-          console.log('test');
+          // restricts user access to token if no otp device is set
+          $scope.restrictedAccess = null;
+          $scope.removeAccessToken = function (accessTokenId) {
+            AccessTokensAPI.remove(accessTokenId).then(function (data) {
+              $scope.refreshAccessTokens();
+            }).catch(function (error) {
+              console.log('Error getting list of access tokens: ' + error.error);
+            });
+          };
+          /**
+         * Initializes the users access state
+         * @private
+         */
+          function init() {
+            if ($scope.user.settings.otpDevices.length === 0) {
+              $scope.restrictedAccess = true;
+            }
+          }
+          init();
         }
       ]
     };
@@ -12398,34 +15748,11 @@ angular.module('BitGo.Settings.DevelopersManagerDirective', []).directive('devel
         * Reset to list view when user changes top level sections within settings
         * @private
         */
-          var killStateWatcher = $scope.$on('SettingsController.StateChangesd', function (evt, data) {
+          var killStateWatcher = $scope.$on('SettingsController.StateChanged', function (evt, data) {
               if (data.newState) {
                 $scope.setState('list');
               }
             });
-          /**
-        * Clean up all watchers when the scope is garbage collected
-        * @private
-        */
-          $scope.$on('$destroy', function () {
-            killStateWatcher();
-          });
-          $scope.startRemovingToken = function (id) {
-            $scope.IdToConfirmRemove = id;
-          };
-          $scope.stopRemovingToken = function () {
-            $scope.IdToConfirmRemove = null;
-          };
-          $scope.showRemovingConfirm = function (id) {
-            return id === $scope.IdToConfirmRemove ? true : false;
-          };
-          $scope.removeAccessToken = function (accessTokenId) {
-            AccessTokensAPI.remove(accessTokenId).then(function (data) {
-              $scope.refreshAccessTokens();
-            }).catch(function (error) {
-              console.log('Error getting list of access tokens: ' + error.error);
-            });
-          };
           $scope.newToken = false;
           $scope.setToken = function (token) {
             $scope.newToken = token;
@@ -12433,6 +15760,13 @@ angular.module('BitGo.Settings.DevelopersManagerDirective', []).directive('devel
           $scope.removeToken = function (token) {
             $scope.newToken = undefined;
           };
+          /**
+        * Clean up all watchers when the scope is garbage collected
+        * @private
+        */
+          $scope.$on('$destroy', function () {
+            killStateWatcher();
+          });
           function init() {
             $scope.state = 'list';
             $scope.accessTokenList = [];
@@ -12450,7 +15784,8 @@ angular.module('BitGo.Settings.DevelopersManagerDirective', []).directive('devel
   'NotifyService',
   'RequiredActionService',
   'BG_DEV',
-  function ($rootScope, UserAPI, Util, Notify, RequiredActionService, BG_DEV) {
+  'SDK',
+  function ($rootScope, UserAPI, Util, Notify, RequiredActionService, BG_DEV, SDK) {
     return {
       restrict: 'A',
       require: '^SettingsController',
@@ -12499,6 +15834,7 @@ angular.module('BitGo.Settings.DevelopersManagerDirective', []).directive('devel
             return false;
           };
           function resetForm() {
+            $scope.formError = null;
             $scope.settings.local.newPassword = null;
             $scope.settings.local.newPasswordConfirm = null;
             $scope.settings.local.oldPassword = null;
@@ -12524,6 +15860,7 @@ angular.module('BitGo.Settings.DevelopersManagerDirective', []).directive('devel
             }
             // Reset the form
             resetForm();
+            return Notify.success('Your password has been successfully updated');
           }
           // Function to verify if the passcode the user put in is valid
           function checkPasscode(password) {
@@ -12532,7 +15869,7 @@ angular.module('BitGo.Settings.DevelopersManagerDirective', []).directive('devel
           // Decrypt a keychain private key
           function decryptXprv(encryptedXprv, passcode) {
             try {
-              var xprv = Util.Crypto.sjclDecrypt(passcode, encryptedXprv);
+              var xprv = SDK.decrypt(passcode, encryptedXprv);
               return xprv;
             } catch (e) {
               return undefined;
@@ -12547,7 +15884,7 @@ angular.module('BitGo.Settings.DevelopersManagerDirective', []).directive('devel
               var xprv = decryptXprv(encryptedXprv, oldRawPassword);
               if (xprv) {
                 // reencrypt with newpassword
-                newKeychains[xpub] = Util.Crypto.sjclEncrypt(newRawPassword, xprv);
+                newKeychains[xpub] = SDK.encrypt(newRawPassword, xprv);
               } else {
                 // since we can't decrypt this, leave it untouched
                 newKeychains[xpub] = encryptedXprv;
@@ -12556,14 +15893,12 @@ angular.module('BitGo.Settings.DevelopersManagerDirective', []).directive('devel
             return newKeychains;
           }
           $scope.savePw = function () {
-            // clear any errors
-            $scope.clearFormError();
             if (formIsValid()) {
               var oldRawPassword = $scope.settings.local.oldPassword;
               var newRawPassword = $scope.settings.local.newPassword;
-              var oldPassword = Util.Crypto.sjclHmac($scope.settings.username, oldRawPassword);
-              var newPassword = Util.Crypto.sjclHmac($scope.settings.username, newRawPassword);
-              checkPasscode(oldPassword).then(function () {
+              var oldPassword = SDK.passwordHMAC($scope.settings.username, oldRawPassword);
+              var newPassword = SDK.passwordHMAC($scope.settings.username, newRawPassword);
+              checkPasscode(oldRawPassword).then(function () {
                 return UserAPI.getUserEncryptedData();
               }).then(function (encrypted) {
                 var keychains = decryptThenReencrypt(encrypted, oldRawPassword, newRawPassword);
@@ -12591,6 +15926,7 @@ angular.module('BitGo.Settings.DevelopersManagerDirective', []).directive('devel
             if (RequiredActionService.hasAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW)) {
               $scope.showWeakPasswordWarning = true;
             }
+            $scope.formError = null;
           }
           init();
         }
@@ -12599,483 +15935,14 @@ angular.module('BitGo.Settings.DevelopersManagerDirective', []).directive('devel
   }
 ]);/**
  * @ngdoc directive
- * @name settingsPhoneForm
+ * @name PreferencesForm
  * @description
- * Directive to manage the settings phone form
- */
-angular.module('BitGo.Settings.PhoneFormDirective', []).directive('settingsPhoneForm', [
-  '$rootScope',
-  'UserAPI',
-  'UtilityService',
-  'NotifyService',
-  function ($rootScope, UserAPI, Util, Notify) {
-    return {
-      restrict: 'A',
-      require: '^SettingsController',
-      controller: [
-        '$scope',
-        function ($scope) {
-          // access to the utility class validators
-          var validate = Util.Validators;
-          // Bool to show/hide the verification
-          var phoneNeedsVerification;
-          function formIsValid() {
-            if (!validate.phoneOk($scope.settings.phone.phone)) {
-              $scope.setFormError('Please enter a valid phone number.');
-              return false;
-            }
-            return true;
-          }
-          $scope.hasPhoneChanges = function () {
-            if (!$scope.settings || !$scope.localSettings) {
-              return false;
-            }
-            if (!_.isEqual($scope.localSettings.phone, $scope.settings.phone)) {
-              return true;
-            }
-            return false;
-          };
-          /**
-          * Resets the user's phone number back to the existing/verified number
-          */
-          function resetPhoneNumber() {
-            $scope.settings.phone.phone = $scope.localSettings.phone.phone;
-          }
-          /**
-          * Resets the phone verification state
-          */
-          function resetVerificationState() {
-            phoneNeedsVerification = false;
-            $scope.verificationOtp = '';
-          }
-          /**
-          * Resets state if user abandons initial otp to change phone number
-          */
-          function unlockFail() {
-            resetPhoneNumber();
-            resetVerificationState();
-          }
-          function onSavePhoneSuccess(settings) {
-            $scope.getSettings();
-            resetVerificationState();
-          }
-          function onSavePhoneFail(error) {
-            if (Util.API.isOtpError(error)) {
-              $scope.openModal().then(function (data) {
-                if (data.type === 'otpsuccess') {
-                  phoneNeedsVerification = true;
-                }
-              }).catch(unlockFail);
-            } else {
-              Notify.error(error.error);
-            }
-          }
-          /**
-          * Logic in the UI to show/hide the verification form
-          * @returns {Bool}
-          */
-          $scope.showVerificationForm = function () {
-            return phoneNeedsVerification;
-          };
-          /**
-          * Logic in the UI to show/hide the verified/unverified text
-          * @returns {Bool}
-          */
-          $scope.needsVerification = function () {
-            if (!$scope.settings || !$scope.localSettings) {
-              return;
-            }
-            return !$scope.settings.phone.verified || !validate.phoneMatch($scope.settings.phone.phone, $scope.localSettings.phone.phone);
-          };
-          $scope.sendSMS = function () {
-            // send the sms to their new phone number
-            var params = {
-                forceSMS: true,
-                phone: $scope.settings.phone.phone
-              };
-            UserAPI.sendOTP(params).then(Notify.successHandler('Your code was sent.')).catch(Notify.errorHandler);
-          };
-          $scope.savePhoneForm = function () {
-            // clear any errors
-            $scope.clearFormError();
-            if (formIsValid()) {
-              var newSettings = {
-                  otp: $scope.verificationOtp,
-                  phone: $scope.settings.phone.phone
-                };
-              $scope.savePhone(newSettings).then(onSavePhoneSuccess).catch(onSavePhoneFail);
-            }
-          };
-          $scope.cancelPhoneReset = function () {
-            resetPhoneNumber();
-            resetVerificationState();
-          };
-          function init() {
-            resetVerificationState();
-          }
-          init();
-        }
-      ]
-    };
-  }
-]);/**
- * @ngdoc directive
- * @name settingsPlansForm
- * @description
- * Directive to manage the settings user account plans form
+ * Directive to manage the currency and notification settings
  * @example
- *   <div settings-plans-form></div>
+ *   <div settings-preferences-form></div>
  */
 /**/
-angular.module('BitGo.Settings.PlansFormDirective', []).directive('settingsPlansForm', [
-  '$rootScope',
-  'BG_DEV',
-  'UserAPI',
-  'NotifyService',
-  '$location',
-  '$anchorScroll',
-  'AnalyticsProxy',
-  'AnalyticsUtilities',
-  function ($rootScope, BG_DEV, UserAPI, Notify, $location, $anchorScroll, AnalyticsProxy, AnalyticsUtilities) {
-    return {
-      restrict: 'A',
-      require: '^?SettingsController',
-      controller: [
-        '$scope',
-        function ($scope) {
-          // Will be the instance of our credit card tracking monitor
-          var creditCardCompletionMonitor;
-          // Bool to init the card tracking monitor only once per tab load
-          var cardMonitorInitialized;
-          // Holds user payment data
-          $scope.cc = {
-            cvc: undefined,
-            expiry: undefined,
-            number: undefined
-          };
-          // The valid user plans
-          $scope.plans = BG_DEV.USER.ACCOUNT_LEVELS;
-          // the user's current account plan
-          $scope.userPlan = $rootScope.currentUser && $rootScope.currentUser.plan;
-          // the currently selected plan
-          $scope.selectedPlan = _.cloneDeep($scope.userPlan);
-          // This keeps track of whether to show the success message on plan change
-          $scope.confirmationState = false;
-          // flag to see if plan change is in process
-          $scope.inProcess = false;
-          /**
-        * Resets the selected plan to the user plan everytime the 'plans' section is selected
-        *
-        * @private
-        */
-          function resetSelectedPlan() {
-            $scope.selectedPlan = _.cloneDeep($scope.userPlan);
-          }
-          /**
-        * Parses the cc expiration date
-        *
-        * @returns { Array } ['month', 'year']
-        * @private
-        */
-          function parseExpry() {
-            if (!$scope.cc.expiry) {
-              return [];
-            }
-            return $scope.cc.expiry.replace(/ /g, '').split('/');
-          }
-          /**
-        * Check if the payment form is valid
-        *
-        * @returns { Bool }
-        * @private
-        */
-          function formValid() {
-            try {
-              if (!Stripe.card.validateCardNumber($scope.cc.number)) {
-                $scope.setFormError('Please enter a valid credit card number.');
-                return false;
-              }
-              if (!$scope.cc.expiry || !Stripe.card.validateExpiry(parseExpry()[0], parseExpry()[1])) {
-                $scope.setFormError('Please enter a valid expiration date.');
-                return false;
-              }
-              if (!Stripe.card.validateCVC($scope.cc.cvc)) {
-                $scope.setFormError('Please enter a valid cvc.');
-                return false;
-              }
-              return true;
-            } catch (e) {
-              Notify.error('Could not validate credit card. ' + e.message + '. Please refresh and try again.');
-            }
-          }
-          /**
-        * Tacks on updated stripe data on the user object as well scope variables required
-        *
-        * @params { object } - user settings object returned from the user
-        * @private
-        */
-          function addStripeDataToUser(data) {
-            $scope.inProcess = false;
-            if (data.stripe) {
-              $rootScope.currentUser.settings.stripe = data.stripe;
-              $rootScope.currentUser.plan = $rootScope.currentUser.getPlan();
-              $scope.userPlan = $rootScope.currentUser.plan;
-              $scope.confirmationState = true;
-            } else {
-              throw new Error('Expected stripe data to update user');
-            }
-          }
-          /**
-        * UI - Track the user completing entrance of a valid credit card
-        *
-        * @private
-        */
-          function trackCard() {
-            var evtData = {
-                currentPlan: $scope.userPlan.name,
-                selectedPlan: $scope.selectedPlan.name
-              };
-            creditCardCompletionMonitor.track('EnterCard', evtData);
-          }
-          /**
-        * UI - Submit the user's credit card for payment
-        *
-        * @public
-        */
-          $scope.submitCard = function (planId) {
-            if (formValid()) {
-              var stripeData = {
-                  number: $scope.cc.number,
-                  cvc: $scope.cc.cvc,
-                  exp_month: parseExpry()[0],
-                  exp_year: parseExpry()[1]
-                };
-              if (planId) {
-                $scope.inProcess = true;
-                Stripe.card.createToken(stripeData, function (status, result) {
-                  if (result.error) {
-                    $scope.inProcess = false;
-                    Notify.error(result.error.message);
-                    return;
-                  }
-                  UserAPI.payment({ token: result.id }, { planId: planId }).then(function (data) {
-                    var evtData = {
-                        type: 'create',
-                        billingCycle: 'monthly',
-                        newPlan: $scope.selectedPlan.name
-                      };
-                    AnalyticsProxy.track('changePlan', evtData);
-                    return addStripeDataToUser(data);
-                  }).catch(function (err) {
-                    $scope.inProcess = false;
-                    Notify.error(err.error);
-                  });
-                });
-              } else {
-                throw new Error('Expected planId to submit payment');
-              }
-            }
-          };
-          /**
-        * UI - Track the user's first entrance of credit card data into the form
-        *
-        * @public
-        */
-          $scope.initCardTracker = function () {
-            if (cardMonitorInitialized) {
-              return;
-            }
-            cardMonitorInitialized = true;
-            trackCard();
-          };
-          /**
-        * UI - change the plan which the user is on
-        * params - {string} - The plan which to change to
-        * @public
-        */
-          $scope.changePlan = function (planId) {
-            if (!planId) {
-              throw new Error('Invalid plan to change to');
-            }
-            $scope.inProcess = true;
-            UserAPI.changeSubscription({ planId: planId }, $rootScope.currentUser.settings.stripe.subscription.id).then(function (data) {
-              var evtData = {
-                  billingCycle: 'monthly',
-                  oldPlan: $scope.userPlan.name,
-                  newPlan: $scope.selectedPlan.name,
-                  type: $scope.isUpgrade() ? 'upgrade' : 'downgrade'
-                };
-              AnalyticsProxy.track('changePlan', evtData);
-              return addStripeDataToUser(data);
-            }).catch(function (err) {
-              $scope.inProcess = false;
-              Notify.error('There was an error in changing your plan. Please refresh and try again');
-            });
-          };
-          /**
-        * UI - Submit the user's credit card for payment
-        * (not being used currently)
-        * @public
-        */
-          $scope.deletePlan = function () {
-            UserAPI.deleteSubscription($rootScope.currentUser.settings.stripe.subscription.id).then(function (data) {
-              var evtData = {
-                  type: 'delete',
-                  billingCycle: 'monthly',
-                  oldPlan: $scope.userPlan.name
-                };
-              AnalyticsProxy.track('changePlan', evtData);
-              return addStripeDataToUser(data);
-            }).catch(function (err) {
-              $scope.inProcess = false;
-              Notify.error('There was an error in downgrading your plan. Please refresh and try again');
-            });
-          };
-          // Event Handlers
-          // Watch for changes in the $scope's state and resets the selected plan when the plans section is loaded
-          var killStateWatch = $scope.$watch('state', function (state) {
-              if (state === 'plans') {
-                init();
-              }
-            });
-          var killCardWatcher = $scope.$watch('cc.number', function () {
-              if (typeof $scope.cc.number !== 'string' || $scope.cc.number === '') {
-                return;
-              }
-              trackCard();
-            });
-          // Clean up when the scope is destroyed
-          $scope.$on('$destroy', function () {
-            // remove listeners
-            killStateWatch();
-            killCardWatcher();
-          });
-          function init() {
-            // initialize the correct plan
-            resetSelectedPlan();
-            // set up credit card tracking
-            creditCardCompletionMonitor = new AnalyticsUtilities.time.CreditCardCompletionMonitor();
-            cardMonitorInitialized = false;
-          }
-          init();
-        }
-      ],
-      link: function (scope, ele, attrs) {
-        /**
-        * UI - Select a plan
-        * @params {String}- Name of the plan to select
-        * @public
-        */
-        scope.selectPlan = function (plan) {
-          if (!plan) {
-            throw new Error('Expect a valid plan when setting plan');
-          }
-          scope.confirmationState = false;
-          // sroll to id of element
-          $('html, body').animate({ scrollTop: $('#plansChangeSection').offset().top });
-          // Track the user toggling the plan
-          AnalyticsProxy.track('togglePlan', {
-            currentPlan: scope.userPlan.name,
-            selectedPlan: plan
-          });
-          // if user selects plan which is plus or pro, we try and maintain the same billing cycle as before (default is annual)
-          if (plan === scope.plans.proMonthly.name || plan === scope.plans.plusMonthly.name) {
-            scope.selectedPlan = scope.plans[plan + BG_DEV.USER.BILLING_CYCLE.monthly];
-            return;
-          }  // if the user selects basic, we maintain the grandfather status if the user was one before
-          else if (plan === scope.plans.basic.name) {
-            if (_.isEqual(scope.userPlan, scope.plans.grandfathered)) {
-              scope.selectedPlan = scope.plans.grandfathered;
-              return;
-            }
-            scope.selectedPlan = scope.plans.basic;
-          } else {
-            throw new Error('Expect a valid plan when setting plan');
-          }
-        };
-        /**
-        * UI - Check if the selected plan is different from user plan
-        *
-        * @returns { Bool }
-        * @public
-        */
-        scope.UserPlanDifferentFromSelectedPlan = function () {
-          return !_.isEqual(scope.userPlan, scope.selectedPlan);
-        };
-        /**
-        * UI - highlight the current plan
-        *
-        * @returns { Bool }
-        * @public
-        */
-        scope.isSelectedPlan = function (plan) {
-          return scope.selectedPlan.name === plan;
-        };
-        /**
-        * UI - For choosing right button class for a particular user state
-        *
-        * @returns { String }
-        * ''
-        * @public
-        */
-        scope.buttonState = function (plan) {
-          // check if plan is basic and change it to grandfathered if the user is grandfathered
-          if (plan === scope.plans.basic.name && scope.userPlan.name == scope.plans.grandfathered.name) {
-            plan = scope.plans.grandfathered.name;
-          }
-          if (scope.isSelectedPlan(plan) && !scope.isUserPlan(plan)) {
-            return 'selectedNotUserPlan';
-          } else if (!scope.isSelectedPlan(plan) && !scope.isUserPlan(plan)) {
-            return 'notSelectedNotUserPlan';
-          } else if (scope.isSelectedPlan(plan) && scope.isUserPlan(plan)) {
-            return 'SelectedAndUserPlan';
-          } else {
-            return 'notSelectedAndUserPlan';
-          }
-        };
-        /**
-        * UI - Change the billing of a selected plan
-        *
-        * @public
-        */
-        scope.changeBilling = function () {
-          scope.selectedPlan = scope.plans[scope.selectedPlan.name + scope.billingCycle];
-        };
-        /**
-        * UI - show if plan is user's current plan
-        *
-        * @returns { Bool }
-        * @public
-        */
-        scope.isUserPlan = function (plan) {
-          return scope.userPlan.name === plan;
-        };
-        /**
-        * UI - check if the selected plan is an upgrade from the user plan
-        *
-        * @returns { Bool }
-        * @public
-        */
-        scope.isUpgrade = function () {
-          return scope.userPlan.level < scope.selectedPlan.level;
-        };
-        /**
-        * UI - Take the user to learn about insurance
-        *
-        * @public
-        */
-        scope.goToViewInfo = function () {
-          var evtData = {
-              type: 'insurance',
-              subSection: 'plans'
-            };
-          AnalyticsProxy.track('viewInfo', evtData);
-          $location.path('/insurance');
-        };
-      }
-    };
-  }
-]);angular.module('BitGo.Settings.PreferencesCurrencyFormDirective', []).directive('settingsPreferencesCurrencyForm', [
+angular.module('BitGo.Settings.PreferencesFormDirective', []).directive('settingsPreferencesForm', [
   '$rootScope',
   'NotifyService',
   function ($rootScope, Notify) {
@@ -13085,21 +15952,45 @@ angular.module('BitGo.Settings.PlansFormDirective', []).directive('settingsPlans
       controller: [
         '$scope',
         function ($scope) {
+          $scope.digestIntervals = {
+            daily: {
+              name: 'Daily',
+              value: 86400
+            },
+            weekly: {
+              name: 'Weekly',
+              value: 86400 * 7
+            },
+            monthly: {
+              name: 'Monthly',
+              value: 86400 * 7 * 2 * 2
+            }
+          };
           function onSubmitSuccess() {
             $scope.getSettings();
           }
-          $scope.submitCurrency = function () {
+          $scope.submitPreferences = function () {
+            // remove otp devices from settings
+            var settings = _.omit($scope.settings, 'otpDevices');
             var params = {
                 otp: $scope.otp,
-                settings: $scope.settings
+                settings: settings
               };
             $scope.saveSettings(params).then(onSubmitSuccess).catch(Notify.errorHandler);
           };
-          $scope.hasCurrencyChanges = function () {
+          $scope.hasPreferenceChanges = function () {
             if (!$scope.settings || !$scope.localSettings) {
               return false;
             }
             if (!_.isEqual($scope.localSettings.currency, $scope.settings.currency)) {
+              return true;
+            }
+            if (!_.isEqual($scope.localSettings.notifications, $scope.settings.notifications)) {
+              return true;
+            }
+            // convert from string back to number as the input tag modifies value to string
+            $scope.settings.digest.intervalSeconds = Number($scope.settings.digest.intervalSeconds);
+            if (!_.isEqual($scope.localSettings.digest, $scope.settings.digest)) {
               return true;
             }
             return false;
@@ -13114,45 +16005,6 @@ angular.module('BitGo.Settings.PlansFormDirective', []).directive('settingsPlans
               $rootScope.$emit('SettingsCurrencyForm.ChangeAppCurrency', $scope.settings.currency.currency);
             }
           });
-        }
-      ]
-    };
-  }
-]);angular.module('BitGo.Settings.PreferencesNotificationFormDirective', []).directive('settingsPreferencesNotificationForm', [
-  '$rootScope',
-  'NotifyService',
-  function ($rootScope, Notify) {
-    return {
-      restrict: 'A',
-      require: '^SettingsController',
-      controller: [
-        '$scope',
-        function ($scope) {
-          $scope.digestIntervals = {
-            daily: {
-              name: 'daily',
-              value: 86400
-            },
-            every_other_day: {
-              name: 'every other day',
-              value: 86400 * 2
-            },
-            weekly: {
-              name: 'weekly',
-              value: 86400 * 7
-            },
-            bi_weekly: {
-              name: 'bi-weekly',
-              value: 86400 * 7 * 2
-            },
-            monthly: {
-              name: 'monthly',
-              value: 86400 * 7 * 2 * 2
-            }
-          };
-          function onSubmitSuccess() {
-            $scope.getSettings();
-          }
           // function to set/unset digest interval if digest is enabled/disabled
           $scope.resetDigest = function () {
             //default to daily
@@ -13163,37 +16015,265 @@ angular.module('BitGo.Settings.PlansFormDirective', []).directive('settingsPlans
               $scope.settings.digest.intervalSeconds = 0;
             }
           };
-          $scope.hasNotificationChanges = function () {
+        }
+      ]
+    };
+  }
+]);/**
+ * @ngdoc directive
+ * @name settingsProfileFormDirective
+ * @description
+ * Directive to manage the user settings. (delete and rename)
+ * @example
+ *   <div settings-profile-form></div>
+ */
+angular.module('BitGo.Settings.ProfileFormDirective', []).directive('settingsProfileForm', [
+  '$q',
+  '$rootScope',
+  '$location',
+  '$modal',
+  'UserAPI',
+  'UtilityService',
+  'NotifyService',
+  'BG_DEV',
+  'WalletsAPI',
+  'AnalyticsProxy',
+  function ($q, $rootScope, $location, $modal, UserAPI, Util, Notify, BG_DEV, WalletsAPI, AnalyticsProxy) {
+    return {
+      restrict: 'A',
+      require: '^SettingsController',
+      controller: [
+        '$scope',
+        function ($scope) {
+          var validate = Util.Validators;
+          $scope.settings = $rootScope.currentUser.settings;
+          function formIsValid() {
+            if (!$scope.settings.name.full) {
+              $scope.setFormError('Please enter a name.');
+              return false;
+            }
+            return true;
+          }
+          function onSaveAboutSuccess(settings) {
+            $scope.getSettings();
+          }
+          function onSaveAboutFail(error) {
+            if (Util.API.isOtpError(error)) {
+              $scope.openModal().then(function (data) {
+                if (data.type === 'otpsuccess') {
+                  $scope.saveAboutForm();
+                }
+              }).catch(unlockFail);
+            } else {
+              Notify.error(error.error);
+            }
+          }
+          function onLogoutSuccess() {
+            $location.path('/login');
+          }
+          function logoutUser() {
+            return UserAPI.logout();
+          }
+          $scope.needsIdentityVerification = function () {
+            return !(($rootScope.currentUser.settings || {}).identity || {}).verified;
+          };
+          $scope.goToIdentityVerification = function () {
+            $location.path('/identity/verify');
+          };
+          $scope.hasChanges = function () {
             if (!$scope.settings || !$scope.localSettings) {
               return false;
             }
-            if (!_.isEqual($scope.localSettings.notifications, $scope.settings.notifications)) {
+            if (!_.isEqual($scope.localSettings.name, $scope.settings.name)) {
               return true;
             }
-            if (!_.isEqual($scope.localSettings.digest, $scope.settings.digest)) {
+            if ($scope.localSettings.timezone !== $scope.settings.timezone) {
               return true;
             }
             return false;
           };
-          $scope.submitNotifications = function () {
-            var params = {
-                otp: $scope.otp,
-                settings: $scope.settings
-              };
-            $scope.saveSettings(params).then(onSubmitSuccess).catch(Notify.errorHandler);
+          /**
+         *  Saves changes to the about form
+         *  @private
+         */
+          $scope.saveAboutForm = function () {
+            // clear any errors
+            $scope.clearFormError();
+            if (formIsValid()) {
+              var newSettings = {
+                  otp: $scope.otp,
+                  settings: {
+                    name: { full: $scope.settings.name.full },
+                    timezone: $scope.settings.timezone
+                  }
+                };
+              $scope.saveSettings(newSettings).then(onSaveAboutSuccess).catch(onSaveAboutFail);
+            }
+          };
+          /**
+         * Modal - Open a modal for user deactivation
+         * @private
+         */
+          function openModal(params) {
+            var modalInstance = $modal.open({
+                templateUrl: 'modal/templates/modalcontainer.html',
+                controller: 'ModalController',
+                scope: $scope,
+                resolve: {
+                  locals: function () {
+                    return {
+                      userAction: BG_DEV.MODAL_USER_ACTIONS.deactivationConfirmation,
+                      type: params.type
+                    };
+                  }
+                }
+              });
+            return modalInstance.result;
+          }
+          /**
+        * Called when the user confirms deactivation
+        *
+        * @private
+        */
+          $scope.confirmDeactivate = function () {
+            var userCacheEmpty = _.isEmpty(WalletsAPI.getAllWallets(true));
+            if (!userCacheEmpty) {
+              Notify.error('Please remove all wallets before deactivating account.');
+              return false;
+            } else {
+              openModal({ type: BG_DEV.MODAL_TYPES.deactivationConfirmation });
+            }
           };
         }
       ]
     };
   }
+]);/**
+ * @ngdoc directive
+ *
+ * @name securityManagerDirective
+ *
+ * @description
+ *
+ * Directive to manage the password and otp device settings
+ *
+ * @example
+ *
+ * <div security-manager-directive></div>
+ */
+angular.module('BitGo.Settings.SecurityManagerDirective', []).directive('securityManagerDirective', [
+  '$rootScope',
+  function ($rootScope) {
+    return {
+      restrict: 'A',
+      require: '^SettingsController',
+      controller: [
+        '$rootScope',
+        '$scope',
+        '$modal',
+        '$q',
+        'UserAPI',
+        'BG_DEV',
+        'CacheService',
+        function ($rootScope, $scope, $modal, $q, UserAPI, BG_DEV, CacheService) {
+          // set the security tab views
+          $scope.viewStates = [
+            'twoStepVerificationList',
+            'twoStepVerificationSelect',
+            'phoneVerification',
+            'addTotpDevice',
+            'password'
+          ];
+          $scope.state = 'twoStepVerificationList';
+          /**
+         * Is used to check if the user should be encouraged to setup two-step verification
+         * @private
+         */
+          function needsTwoStepVerification() {
+            return $scope.securityView === 'twoStepVerificationList' && $rootScope.currentUser.settings.otpDevices.length === 0;
+          }
+          /**
+         * Triggers otp modal to open if user needs to otp before adding/removing a device
+         * @private
+         */
+          function openModal(params) {
+            if (!params || !params.type) {
+              throw new Error('Missing modal type');
+            }
+            var modalInstance = $modal.open({
+                templateUrl: 'modal/templates/modalcontainer.html',
+                controller: 'ModalController',
+                scope: $scope,
+                size: params.size,
+                resolve: {
+                  locals: function () {
+                    return {
+                      type: params.type,
+                      userAction: BG_DEV.MODAL_USER_ACTIONS.otp
+                    };
+                  }
+                }
+              });
+            return modalInstance.result;
+          }
+          function getTemplate(ignoreOTP) {
+            if (needsTwoStepVerification() && !ignoreOTP) {
+              $scope.setTemplate('twoStepVerificationSelect');
+            }
+            var tplMap = {
+                addTotpDevice: 'settings/templates/add-totp-device.html',
+                password: 'settings/templates/password.html',
+                phoneVerification: 'settings/templates/phone-verification.html',
+                twoStepVerificationList: 'settings/templates/two-step-verification-list.html',
+                twoStepVerificationSelect: 'settings/templates/two-step-verification-select.html'
+              };
+            return tplMap[$scope.securityView];
+          }
+          $scope.checkUnlock = function () {
+            UserAPI.session().then(function (session) {
+              if (session) {
+                // if the data returned does not have an unlock object, then the user is not unlocked
+                if (session.unlock) {
+                  return $scope.setTemplate('twoStepVerificationSelect');
+                }
+                $scope.openModal({ type: BG_DEV.MODAL_TYPES.otp }).then(function (result) {
+                  if (result.type === 'otpsuccess') {
+                    $scope.setTemplate('twoStepVerificationSelect');
+                  }
+                });
+              }
+            });
+          };
+          $scope.fetchTotpParams = function () {
+            UserAPI.newTOTP().then(function (totpUrl) {
+              $scope.device = { totpUrl: totpUrl };
+              // on fetch success set state to 'addTotpDevice'
+              $scope.setState('addTotpDevice');
+            });
+          };
+          $scope.setTemplate = function (state, ignoreOTP) {
+            $scope.securityView = state;
+            $scope.templateSource = getTemplate(ignoreOTP);
+          };
+          // Event listeners
+          var killStateWatch = $scope.$watch('state', function (state) {
+              $scope.securityView = state;
+              $scope.templateSource = getTemplate();
+            });
+        }
+      ]
+    };
+  }
 ]);/*
-  About:
-  - The SettingsController deals with managing the section of the
-  app where a user sets their personal info, notifications, settings, etc.
-
-  Notes:
-  - This manages: AboutForm, PhoneForm, CurrencyForm, PasswordForm, NotificationForm
-*/
+ * @ngdoc directive
+ * @name settingsController
+ * @description
+ * The SettingsController deals with managing the section of the app where
+ * a user sets their personal info, notification, setings, etc.
+ * 
+ * This manages: AboutForm, PhoneForm, CurrencyForm, SecurityForm, NotificationForm
+ *
+ */
 angular.module('BitGo.Settings.SettingsController', []).controller('SettingsController', [
   '$modal',
   '$rootScope',
@@ -13207,18 +16287,18 @@ angular.module('BitGo.Settings.SettingsController', []).controller('SettingsCont
   function ($modal, $rootScope, $scope, $q, SettingsAPI, UserAPI, Util, InternalStateService, BG_DEV) {
     // Possible view states (sections) for this controller
     $scope.viewStates = [
-      'about',
-      'password',
+      'profile',
+      'security',
       'preferences',
-      'developers',
-      'plans'
+      'api_access',
+      'subscriptions',
+      'billing'
     ];
-    // The initial view state; initialized later
-    $scope.state = null;
     // initialize otp for settings updates
     $scope.otp = null;
     // verification otp is used when resetting the phone number (settings phone form)
     $scope.verificationOtp = null;
+    $scope.settingsStateTemplateSource = null;
     // $scope.saveSettings is called from child directives. Returns a promise
     $scope.saveSettings = function (newSettings) {
       if (!newSettings) {
@@ -13226,12 +16306,39 @@ angular.module('BitGo.Settings.SettingsController', []).controller('SettingsCont
       }
       return SettingsAPI.save(newSettings);
     };
+    function getTemplate() {
+      if (!$scope.state || _.indexOf($scope.viewStates, $scope.state) === -1) {
+        throw new Error('Expect $scope.state to be defined when setting template for a wallet');
+      }
+      var template;
+      switch ($scope.state) {
+      case 'profile':
+        template = 'settings/templates/profile.html';
+        break;
+      case 'security':
+        template = 'settings/templates/security.html';
+        break;
+      case 'preferences':
+        template = 'settings/templates/preferences.html';
+        break;
+      case 'api_access':
+        template = 'settings/templates/api_access.html';
+        break;
+      case 'subscriptions':
+        template = 'settings/templates/subscriptions.html';
+        break;
+      case 'billing':
+        template = 'settings/templates/billing.html';
+        break;
+      }
+      return template;
+    }
     // $scope.savePhone is called from child directives. Returns a promise
     $scope.savePhone = function (params) {
       if (!params) {
         throw new Error('invalid params');
       }
-      return SettingsAPI.savePhone(params);
+      return UserAPI.addOtp(params);
     };
     // Triggers otp modal to open if user needs to otp before changing settings
     $scope.openModal = function (size) {
@@ -13267,14 +16374,21 @@ angular.module('BitGo.Settings.SettingsController', []).controller('SettingsCont
     $scope.getSettings = function () {
       SettingsAPI.get().then(onGetSettingsSuccess).catch(onGetSettingsFail);
     };
+    $scope.setTwoStepVerification = function () {
+      $scope.setState('security');
+    };
     /**
     * Let all substates (tabs) in the settings area know of state changes
     * @private
     */
     var killStateWatcher = $scope.$watch('state', function (state) {
         if (state) {
-          $scope.$broadcast('SettingsController.StateChangesd', { newState: state });
+          $scope.$broadcast('SettingsController.StateChanged', { newState: state });
         }
+        if (_.indexOf($scope.viewStates, $scope.state) === -1) {
+          return;
+        }
+        $scope.settingsStateTemplateSource = getTemplate();
       });
     /**
     * Clean up all watchers when the scope is garbage collected
@@ -13286,7 +16400,7 @@ angular.module('BitGo.Settings.SettingsController', []).controller('SettingsCont
     function init() {
       $rootScope.setContext('accountSettings');
       $scope.getSettings();
-      $scope.state = InternalStateService.getInitState($scope.viewStates) || 'about';
+      $scope.state = InternalStateService.getInitState($scope.viewStates) || 'profile';
     }
     init();
   }
@@ -13296,15 +16410,14 @@ angular.module('BitGo.Settings.SettingsController', []).controller('SettingsCont
   app user's account information, settings, and state
 */
 angular.module('BitGo.Settings', [
-  'BitGo.Settings.AboutFormDirective',
+  'BitGo.Settings.ProfileFormDirective',
+  'BitGo.Settings.DevelopersFormDirective',
   'BitGo.Settings.DevelopersAccesstokenAddFormDirective',
   'BitGo.Settings.DevelopersManagerDirective',
-  'BitGo.Settings.PasswordFormDirective',
-  'BitGo.Settings.PlansFormDirective',
-  'BitGo.Settings.PreferencesCurrencyFormDirective',
-  'BitGo.Settings.PreferencesNotificationFormDirective',
-  'BitGo.Settings.PhoneFormDirective',
-  'BitGo.Settings.SettingsController'
+  'BitGo.Settings.PreferencesFormDirective',
+  'BitGo.Settings.SettingsController',
+  'BitGo.Settings.SecurityManagerDirective',
+  'BitGo.Settings.PasswordFormDirective'
 ]);/**
  * @ngdoc controller
  * @name ToolsController
@@ -13313,50 +16426,19 @@ angular.module('BitGo.Settings', [
  */
 angular.module('BitGo.Tools.ToolsController', []).controller('ToolsController', [
   '$scope',
-  function ($scope) {
+  'SDK',
+  'KeychainsAPI',
+  function ($scope, SDK, KeychainsAPI) {
     $scope.random = '';
     $scope.creationDate = new Date().toLocaleString();
     // Generates a BIP32 key and populates it into the scope.
     $scope.onGenerateBIP32Key = function () {
-      sjcl.random.addEntropy($scope.random, $scope.random.length, 'user');
-      var randomBytes = new Array(256);
-      new Bitcoin.SecureRandom().nextBytes(randomBytes);
-      var seed = Bitcoin.Util.bytesToHex(randomBytes);
-      $scope.newKey = new Bitcoin.BIP32().initFromSeed(seed);
-      $scope.xpub = $scope.newKey.extended_public_key_string();
-      $scope.xprv = $scope.newKey.extended_private_key_string();
-      $scope.address = $scope.newKey.eckey.getBitcoinAddress().toString();
+      SDK.sjcl.random.addEntropy($scope.random, $scope.random.length, 'user');
+      $scope.newKey = KeychainsAPI.generateKey();
+      $scope.xpub = $scope.newKey.neutered().toBase58();
+      $scope.xprv = $scope.newKey.toBase58();
+      $scope.address = $scope.newKey.pubKey.getAddress(SDK.getNetwork()).toBase58Check();
     };
-    // Compute the address based on the inputs.
-    var computeAddress = function () {
-      if (!$scope.userKey || !$scope.backupKey || !$scope.bitgoKey) {
-        return;
-      }
-      var pubKeys = [];
-      pubKeys.push($scope.userKey.eckey.getPub());
-      pubKeys.push($scope.backupKey.eckey.getPub());
-      pubKeys.push($scope.bitgoKey.eckey.getPub());
-      var address = Bitcoin.Address.createMultiSigAddress(pubKeys, 2);
-      $scope.multisigAddress = address.toString();
-    };
-    $scope.$watch('userKey', function (userKey) {
-      if (userKey) {
-        console.log('userkey changed to ' + userKey.extended_public_key_string());
-        computeAddress();
-      }
-    });
-    $scope.$watch('backupKey', function (backupKey) {
-      if (backupKey) {
-        console.log('backupkey changed to ' + backupKey.extended_public_key_string());
-        computeAddress();
-      }
-    });
-    $scope.$watch('bitgoKey', function (bitgoKey) {
-      if (bitgoKey) {
-        console.log('bitgokey changed to ' + bitgoKey.extended_public_key_string());
-        computeAddress();
-      }
-    });
   }
 ]);/**
  * @ngdoc module
@@ -13577,6 +16659,12 @@ angular.module('BitGo.Utility', [
       var length = string.length;
       return new Uint8Array(length);
     }
+    /** [VisibleError description] */
+    function VisibleError(str) {
+      var err = new Error(str);
+      err.error = str;
+      return err;
+    }
     // Conversion Utils
     var Converters = {
         base64ToArrayBuffer: function (base64) {
@@ -13629,7 +16717,7 @@ angular.module('BitGo.Utility', [
           return p1 === p2;
         },
         otpOk: function (otp) {
-          return /^\d{7}$/.test(otp);
+          return /^\d{6,7}$/.test(otp) || /^[a-z]{44}$/.test(otp);
         },
         currencyOk: function (currency) {
           if (!currency) {
@@ -13662,60 +16750,6 @@ angular.module('BitGo.Utility', [
           return intlTelInputUtils.formatNumberE164(phone);
         }
       };
-    // Crypto Utils
-    var Crypto = {
-        generateRandomPassword: function (n_words) {
-          n_words = n_words || 7;
-          return Bitcoin.Base58.encode(sjcl.random.randomWords(n_words));
-        },
-        sjclEncrypt: function (password, message) {
-          var options = {
-              iter: 10000,
-              ks: 256
-            };
-          return sjcl.encrypt(password, message, options);
-        },
-        sjclDecrypt: function (password, message) {
-          return sjcl.decrypt(password, message);
-        },
-        sjclHmac: function (key, value) {
-          var out = new sjcl.misc.hmac(sjcl.codec.utf8String.toBits(key), sjcl.hash.sha256).mac(value);
-          return sjcl.codec.hex.fromBits(out).toLowerCase();
-        },
-        prng: undefined,
-        setPrng: function (prng) {
-          if (!prng) {
-            throw new Error('no prng initialized');
-          }
-          // Kick off event watchers which are used to initialize the PRNG
-          this.prng = prng;
-        },
-        getECDHSecret: function (privKey, pubKey) {
-          var otherKey = new Bitcoin.ECKey('0');
-          otherKey.setPub(pubKey);
-          var secretPoint = otherKey.getPubPoint().multiply(privKey);
-          var secret = secretPoint.getX().toBigInteger().toByteArrayUnsigned();
-          return Bitcoin.Util.bytesToHex(secret).toLowerCase();
-        }
-      };
-    // Bitcoin Utils
-    var BitcoinJSLibAugment = {
-        BIP32: {
-          createFromXprv: function (xprv) {
-            var rootExtKey;
-            try {
-              rootExtKey = new Bitcoin.BIP32(xprv);
-            } catch (e) {
-              // Check if this is the improperly encoded key problem.
-              if (e.message !== 'Not enough data') {
-                throw e;
-              }
-              rootExtKey = new Bitcoin.BIP32().initFromBadXprv(xprv);
-            }
-            return rootExtKey;
-          }
-        }
-      };
     // Browser Utils
     var Global = {
         isChromeApp: location.protocol === 'chrome-extension:',
@@ -13731,10 +16765,7 @@ angular.module('BitGo.Utility', [
         scrubQueryString: function (param) {
           var urlParams = $location.search();
           var scrubTypes = {
-              phone: [
-                'setPhone',
-                'verifyPhone'
-              ],
+              device: ['setOtpDevice'],
               email: ['needsEmailVerify']
             };
           if (!param || _.isEmpty(urlParams)) {
@@ -13773,6 +16804,21 @@ angular.module('BitGo.Utility', [
             }
           });
           return marketingPage;
+        },
+        isAccountSettingsPage: function () {
+          var url = $location.path().split('/');
+          // E.g.: /settings
+          return url.indexOf('settings') === 1;
+        },
+        isEnterpriseSettingsPage: function () {
+          var url = $location.path().split('/');
+          // E.g.: /enterprise//enterpriseId/settings
+          return url.indexOf('settings') === 3;
+        },
+        isCreateEnterprisePage: function () {
+          var url = $location.path().split('/');
+          // E.g.: /create-organization
+          return url.indexOf('create-organization') > -1;
         }
       };
     // API Utils
@@ -13782,19 +16828,16 @@ angular.module('BitGo.Utility', [
           return this.apiServer;
         },
         setApiServer: function () {
+          var server;
           if (Global.isChromeApp) {
-            var server = 'https://test.bitgo.com';
-            // default to testnet.
-            if (typeof APP_ENV === 'undefined') {
-              console.log('WARNING:  Chrome app env undefined');
-            } else if (APP_ENV.bitcoinNetwork != 'testnet') {
-              server = 'https://www.bitgo.com';
-            }
-            this.apiServer = server;
+            server = 'https://test.bitgo.com';  // default to testnet.
           } else {
-            this.apiServer = location.protocol + '//' + location.hostname + (location.port && ':' + location.port);
+            server = location.protocol + '//' + location.hostname + (location.port && ':' + location.port);
           }
-          this.apiServer += '/api/v1';
+          if (typeof APP_ENV !== 'undefined' && APP_ENV.bitcoinNetwork !== 'testnet') {
+            server = 'https://www.bitgo.com';
+          }
+          this.apiServer = server + '/api/v1';
         },
         promiseSuccessHelper: function (property) {
           return function (successData) {
@@ -13827,6 +16870,9 @@ angular.module('BitGo.Utility', [
             // Handle the case when the user loses browser connection
             if (showOfflineError(error)) {
               $rootScope.$emit('UtilityService.AppIsOffline');
+            }
+            if (error.invalidToken) {
+              $rootScope.$emit('UtilityService.InvalidToken');
             }
             var formattedError = {
                 status: error.status,
@@ -13891,14 +16937,13 @@ angular.module('BitGo.Utility', [
     initUtils();
     return {
       API: API,
-      BitcoinJSLibAugment: BitcoinJSLibAugment,
       Converters: Converters,
-      Crypto: Crypto,
       Formatters: Formatters,
       Global: Global,
       Url: Url,
       Validators: Validators,
-      ErrorHelper: ErrorHelper
+      ErrorHelper: ErrorHelper,
+      VisibleError: VisibleError
     };
   }
 ]);/**
@@ -13922,7 +16967,8 @@ angular.module('BitGo.Wallet.WalletAddUserFormDirective', []).directive('walletA
   'BG_DEV',
   'InternalStateService',
   'AnalyticsProxy',
-  function ($rootScope, $q, UserAPI, Notify, KeychainsAPI, UtilityService, $modal, WalletSharesAPI, $filter, BG_DEV, InternalStateService, AnalyticsProxy) {
+  '$location',
+  function ($rootScope, $q, UserAPI, Notify, KeychainsAPI, UtilityService, $modal, WalletSharesAPI, $filter, BG_DEV, InternalStateService, AnalyticsProxy, $location) {
     return {
       restrict: 'A',
       controller: [
@@ -13988,13 +17034,13 @@ angular.module('BitGo.Wallet.WalletAddUserFormDirective', []).directive('walletA
           return false;
         };
         /**
-        * Take the user to their account settings - plans page
+        * Take the user to the create organization page
         *
         * @public
         */
-        scope.goToPlans = function () {
+        scope.goToCreateOrg = function () {
           AnalyticsProxy.track('clickUpsell', { type: 'addPremiumUser' });
-          InternalStateService.goTo('personal_settings:plans');
+          $location.path('/create-organization');
         };
         // Listen for the selected role to change, and if this role is
         // blocked, trigger a mixpanel event for showing the upsell
@@ -14182,16 +17228,20 @@ angular.module('BitGo.Wallet.WalletController', []).controller('WalletController
     /**
      * Listen for changes in the wallet's state and swap templates / sync app as needed
      */
-    var killStateListener = $scope.$watch('state', function (state) {
-        if (state) {
+    var killStateListener = $scope.$watch('state', function (newState, oldState) {
+        if (newState) {
           // If the user has a weak login password and they're trying to spend btc,
           // we force them to upgrade it before they can send any btc
-          if (state === 'send' && RequiredActionService.hasAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW)) {
+          if (newState === 'send' && RequiredActionService.hasAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW)) {
             return RequiredActionService.runAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW);
           }
           // Otherwise set the template as needed and sync the app state
           $scope.walletStateTemplateSource = getTemplate();
-          SyncService.sync();
+          // sync only if old state is not equal to new state
+          // If they are the same it means, we are initializing the controller and url change will handle sync
+          if (oldState !== newState) {
+            SyncService.sync();
+          }
         }
       });
     /**
@@ -14242,8 +17292,7 @@ angular.module('BitGo.Wallet.WalletCreateController', []).controller('WalletCrea
       'label',
       'backupkey',
       'passcode',
-      'activate',
-      'insure'
+      'activate'
     ];
     // the current view state
     $scope.state = null;
@@ -14257,7 +17306,7 @@ angular.module('BitGo.Wallet.WalletCreateController', []).controller('WalletCrea
     // Accessible by all scopes inheriting this controller
     $scope.cancel = function () {
       // track the cancel
-      AnalyticsProxy.track('CreateWalletCanceled');
+      AnalyticsProxy.track('CreateWalletCanceled', { invitation: !!$rootScope.invitation });
       // Note: this redirect will also wipe all of the state that's been built up
       $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/wallets');
     };
@@ -14279,9 +17328,6 @@ angular.module('BitGo.Wallet.WalletCreateController', []).controller('WalletCrea
         break;
       case 'activate':
         tpl = 'wallet/templates/wallet-create-partial-activate.html';
-        break;
-      case 'insure':
-        tpl = 'wallet/templates/wallet-create-partial-insure.html';
         break;
       }
       return tpl;
@@ -14458,15 +17504,31 @@ angular.module('BitGo.Wallet.WalletCreateStepsActivateDirective', []).directive(
                     data: $scope.generated.encryptedWalletPasscode
                   }
                 };
-              // Backup entry depends on whether it's a user-supplied xpub or not
-              if ($scope.inputs.useOwnBackupKey) {
+              // Backup entry depends on who supplied the xpub
+              if ($scope.inputs.backupKeyProvider) {
+                var backupKeyProviderName = $scope.inputs.backupKeyProviderDisplayName();
+                var backupKeyProviderUrl = $scope.inputs.backupKeyProviderUrl();
+                // User supplied the xpub
+                qrdata.backup = {
+                  title: 'B: Backup Key',
+                  img: '#qrEncryptedUserProvidedXpub',
+                  desc: 'This is the public half of your key held at ' + backupKeyProviderName + ', a key recovery service. \r\n' + 'For more information visit: ' + backupKeyProviderUrl,
+                  data: $scope.generated.walletBackupKeychain.xpub
+                };
+              } else if ($scope.inputs.useOwnBackupKey) {
+                // User supplied the xpub
                 qrdata.backup = {
                   title: 'B: Backup Key',
                   img: '#qrEncryptedUserProvidedXpub',
                   desc: 'This is the public portion of your backup key, which you provided.',
                   data: $scope.generated.walletBackupKeychain.xpub
                 };
+                // update description for backup keys generated from ColdKey app
+                if ($scope.inputs.coldKey === $scope.inputs.backupPubKey) {
+                  qrdata.backup.desc = 'This is the public portion of your backup key generated using BitGo KeyTool.';
+                }
               } else {
+                // User generated in the current session
                 qrdata.backup = {
                   title: 'B: Backup Key',
                   img: '#qrEncryptedBackupKey',
@@ -14627,13 +17689,6 @@ angular.module('BitGo.Wallet.WalletCreateStepsActivateDirective', []).directive(
                 $scope.generated.wallet = wallet;
                 // Get the latest wallets for the app
                 WalletsAPI.getAllWallets();
-                // If the user isn't upgraded, prompt an insure wallet step
-                if ($rootScope.currentUser.isBasic() || $rootScope.currentUser.isGrandfathered()) {
-                  if ($rootScope.enterprises.current && $rootScope.enterprises.current.isPersonal) {
-                    $scope.setState('insure');
-                    return;
-                  }
-                }
                 // redirect to the wallets dashboard
                 $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/wallets');
               }).catch();
@@ -14667,10 +17722,15 @@ angular.module('BitGo.Wallet.WalletCreateStepsActivateDirective', []).directive(
  */
 angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', []).directive('walletCreateStepsBackupkey', [
   '$rootScope',
+  '$timeout',
+  'BG_DEV',
   'UtilityService',
+  'KeychainsAPI',
   'NotifyService',
   'AnalyticsProxy',
-  function ($rootScope, Utils, NotifyService, AnalyticsProxy) {
+  'SDK',
+  'featureFlags',
+  function ($rootScope, $timeout, BG_DEV, Utils, KeychainsAPI, NotifyService, AnalyticsProxy, SDK, featureFlags) {
     return {
       restrict: 'A',
       controller: [
@@ -14684,6 +17744,10 @@ angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', []).directive
               },
               userProvided: {
                 userProvided: true,
+                enabled: true
+              },
+              krsProvided: {
+                krsProvided: true,
                 enabled: true
               },
               coldKeyApp: {
@@ -14702,8 +17766,13 @@ angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', []).directive
               break;
             case 'userProvided':
               isValid = $scope.userXpubValid();
-              break;  // case 'coldKeyApp':
-                      //   break;
+              break;
+            case 'coldKeyApp':
+              isValid = $scope.userXpubValid();
+              break;
+            case 'krsProvided':
+              isValid = true;
+              break;
             }
             return isValid;
           }
@@ -14716,13 +17785,13 @@ angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', []).directive
             // Clear generated keychain info
             $scope.generated.backupKeychain = null;
             $scope.generated.backupKey = null;
+            // Clear selected backup key provider
+            $scope.inputs.backupKeyProvider = null;
           }
           // Attempts to generate a backup key from a user's provided xpub
           function generateBackupKeyFromXpub() {
             try {
-              $scope.generated.backupKeychain = new Bitcoin.BIP32($scope.inputs.backupPubKey);
-              var key = $scope.generated.backupKeychain.eckey;
-              $scope.generated.backupKey = key;
+              $scope.generated.backupKeychain = SDK.bitcoin.HDNode.fromBase58($scope.inputs.backupPubKey);
             } catch (error) {
               return false;
             }
@@ -14754,12 +17823,59 @@ angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', []).directive
             }
             $scope.option = option;
             // Track the creation option selected
-            var metricsData = { option: option };
+            var metricsData = {
+                option: option,
+                invitation: !!$rootScope.invitation
+              };
             AnalyticsProxy.track('SelectBackupKeyOption', metricsData);
+            // prevent timeout from endless api calling
+            $scope.waitingForColdKey = false;
             // If the user chooses another backup key creation option,
             // clear the form data from the other (unselected) options
-            if (option === 'inBrowser') {
-              clearBackupKeyInputs();
+            clearBackupKeyInputs();
+            // scroll to bottom
+            $('html body').animate({ scrollTop: $(document).height() });
+            if (option === 'krsProvided') {
+              $scope.inputs.backupKeyProvider = $scope.backupKeyProviders[0].id;
+            } else if (option === 'coldKeyApp') {
+              // set up the variables for the passcodeStep
+              $scope.inputs.backupKeySource = null;
+              // set up qr code for coldkey app
+              var coldKeySecret = 'ckid' + SDK.generateRandomPassword();
+              var coldKeyQRCode = {
+                  v: 1,
+                  e: SDK.get().env || 'dev',
+                  s: coldKeySecret
+                };
+              $scope.inputs.coldKeySecret = coldKeySecret;
+              $scope.inputs.coldKeyQRCode = JSON.stringify(coldKeyQRCode);
+              // We start polling in the background to check for a cold key
+              $scope.waitingForColdKey = true;
+              var currentStep = $scope.currentStep;
+              var scheduleColdKeyCheck = function () {
+                var kPollInterval = 2 * 1000;
+                if (!$scope.waitingForColdKey) {
+                  return;  // done!
+                }
+                $timeout(function () {
+                  KeychainsAPI.getColdKey($scope.inputs.coldKeySecret).then(function (response) {
+                    if (response.xpub) {
+                      $scope.waitingForColdKey = false;
+                      $scope.inputs.coldKey = $scope.inputs.backupPubKey = response.xpub;
+                      if ($scope.userXpubValid()) {
+                        $('html body').animate({ scrollTop: $(document).height() });
+                      }
+                    }
+                  }).catch(function (error) {
+                    if (error.status === 404) {
+                      scheduleColdKeyCheck();
+                    } else {
+                      NotifyService.errorHandler(error);
+                    }
+                  });
+                }, kPollInterval);
+              };
+              scheduleColdKeyCheck();
             }
           };
           // Tells if the specific option is disabled based on the backup
@@ -14798,10 +17914,9 @@ angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', []).directive
               if (xpub && $scope.userXpubValid()) {
                 // track the successful addition of a backup xpub
                 AnalyticsProxy.track('ValidBackupXpubEntered');
-                disableOptions([
-                  'inBrowser',
-                  'coldKeyApp'
-                ]);
+                // enable only the selected option
+                disableOptions(_.keys(VALID_BACKUPKEY_OPTIONS));
+                _.find(VALID_BACKUPKEY_OPTIONS, $scope.option).enabled = true;
                 $scope.inputs.useOwnBackupKey = true;
               }
             });
@@ -14811,53 +17926,21 @@ angular.module('BitGo.Wallet.WalletCreateStepsBackupkeyDirective', []).directive
           });
           // Initialize the controller
           function init() {
-            $scope.option = 'inBrowser';
-          }
-          init();
-        }
-      ]
-    };
-  }
-]);/**
-  Directive to manage the wallet creation insurance upsell step
-  - Parent Controller is WalletCreateController
- */
-angular.module('BitGo.Wallet.WalletCreateStepsInsureDirective', []).directive('walletCreateStepsInsure', [
-  '$rootScope',
-  '$location',
-  'AnalyticsProxy',
-  'InternalStateService',
-  function ($rootScope, $location, AnalyticsProxy, InternalStateService) {
-    return {
-      restrict: 'A',
-      controller: [
-        '$scope',
-        function ($scope) {
-          /**
-        * Take the user to their account settings - plans page
-        *
-        * @public
-        */
-          $scope.goToPlans = function () {
-            AnalyticsProxy.track('clickUpsell', { type: 'createWallet' });
-            InternalStateService.goTo('personal_settings:plans');
-          };
-          /**
-        * Take the user back to their wallet list
-        *
-        * @public
-        */
-          $scope.skipPlans = function () {
-            AnalyticsProxy.track('skipUpsell', { type: 'createWallet' });
-            $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/wallets');
-          };
-          /**
-        * Initialize the controller
-        *
-        * @private
-        */
-          function init() {
-            AnalyticsProxy.track('arriveUpsell', { type: 'createWallet' });
+            if (featureFlags.isOn('krs')) {
+              $scope.backupKeyProviders = BG_DEV.BACKUP_KEYS.krsProviders;
+              $scope.inputs = $scope.inputs || {};
+              var backupKeyProvidersById = _.indexBy($scope.backupKeyProviders, 'id');
+              $scope.inputs.backupKeyProviderDisplayName = function () {
+                return backupKeyProvidersById[$scope.inputs.backupKeyProvider].displayName;
+              };
+              $scope.inputs.backupKeyProviderUrl = function () {
+                return backupKeyProvidersById[$scope.inputs.backupKeyProvider].url;
+              };
+              $scope.inputs.backupKeyProvider = $scope.backupKeyProviders[0].id;
+              $scope.option = 'krsProvided';
+            } else {
+              $scope.option = 'inBrowser';
+            }
           }
           init();
         }
@@ -14943,7 +18026,10 @@ angular.module('BitGo.Wallet.WalletCreateStepsLabelDirective', []).directive('wa
             $scope.clearFormError();
             if (isValidStep()) {
               // track the successful label advancement
-              var metricsData = { walletLabel: $scope.inputs.walletLabel };
+              var metricsData = {
+                  walletLabel: $scope.inputs.walletLabel,
+                  invitation: !!$rootScope.invitation
+                };
               AnalyticsProxy.track('LabelWallet', metricsData);
               // advance the form
               $scope.setState('backupkey');
@@ -14967,7 +18053,6 @@ angular.module('BitGo.Wallet.WalletCreateStepsLabelDirective', []).directive('wa
 angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', []).directive('walletCreateStepsPasscode', [
   '$q',
   '$rootScope',
-  'UtilityService',
   'NotifyService',
   'KeychainsAPI',
   'UserAPI',
@@ -14975,7 +18060,8 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', []).directive(
   'BG_DEV',
   'AnalyticsProxy',
   'AnalyticsUtilities',
-  function ($q, $rootScope, Utils, Notify, KeychainsAPI, UserAPI, $timeout, BG_DEV, AnalyticsProxy, AnalyticsUtilities) {
+  'SDK',
+  function ($q, $rootScope, Notify, KeychainsAPI, UserAPI, $timeout, BG_DEV, AnalyticsProxy, AnalyticsUtilities, SDK) {
     // valid password type options
     var VALID_PW_OPTIONS = {
         newWalletPw: true,
@@ -15044,11 +18130,7 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', []).directive(
          * @private
          */
           function loginPasswordFormCheck() {
-            var key = $rootScope.currentUser.settings.email.email;
-            var passcode = $scope.inputs.passcode || '';
-            // We MAC the password with the user's email before verifying
-            var params = { password: Utils.Crypto.sjclHmac(key, passcode) };
-            return UserAPI.verifyPassword(params);
+            return UserAPI.verifyPassword({ password: $scope.inputs.passcode || '' });
           }
           /**
          * Function to encrypt the wallet's passcode with a secure code
@@ -15058,11 +18140,11 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', []).directive(
             // Update the UI progress bar
             $scope.updateProgress(1);
             try {
-              $scope.generated.passcodeEncryptionCode = Utils.Crypto.generateRandomPassword(10);
+              $scope.generated.passcodeEncryptionCode = SDK.generateRandomPassword();
             } catch (e) {
               return $q.reject({ error: 'BitGo needs to gather more entropy for encryption. Please refresh your page and try this again.' });
             }
-            $scope.generated.encryptedWalletPasscode = sjcl.encrypt($scope.generated.passcodeEncryptionCode, $scope.inputs.passcode);
+            $scope.generated.encryptedWalletPasscode = SDK.encrypt($scope.generated.passcodeEncryptionCode, $scope.inputs.passcode);
             // Let the user see the heavy lifting that we're doing while creating the wallet.
             return $q.when(function () {
               $timeout(function () {
@@ -15100,17 +18182,25 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', []).directive(
           function createBackupKeychain(callback) {
             // Update the UI progress bar
             $scope.updateProgress(3);
-            var params = {
-                source: 'user',
-                passcode: $scope.inputs.passcode
-              };
-            // check if the user provided their own backup key
-            if ($scope.generated.backupKeychain) {
-              params.source = 'cold';
-              params.extendedKey = $scope.generated.backupKeychain;
-            }
-            // Return a promise
-            return KeychainsAPI.createKeychain(params).then(function (keychain) {
+            // always return a promise
+            var callCreateBackupAPIs = function () {
+              // simply call the create backup route if a krs was selected
+              if ($scope.inputs.backupKeyProvider) {
+                return KeychainsAPI.createBackupKeychain($scope.inputs.backupKeyProvider);
+              }
+              var params = {
+                  source: 'user',
+                  passcode: $scope.inputs.passcode
+                };
+              // check if the user provided their own backup key
+              if ($scope.generated.backupKeychain) {
+                params.source = 'cold';
+                params.hdNode = $scope.generated.backupKeychain;
+              }
+              // Return a promise
+              return KeychainsAPI.createKeychain(params);
+            };
+            return callCreateBackupAPIs().then(function (keychain) {
               // advance the UI with CSS
               $scope.generated.walletBackupKeychain = keychain;
               // Let the user see the heavy lifting that we're doing while creating the wallet.
@@ -15153,7 +18243,10 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', []).directive(
             $scope.creatingWallet = true;
             generatePasscodeEncryptionCode().then(createUserKeychain).then(createBackupKeychain).then(createBitGoKeychain).then(function () {
               // track the successful keychain creations/advancement
-              metricsData = { option: $scope.option };
+              metricsData = {
+                option: $scope.option,
+                invitation: !!$rootScope.invitation
+              };
               AnalyticsProxy.track('SetWalletPasscode', metricsData);
               // Let the user see the heavy lifting that we're doing while creating the wallet.
               $timeout(function () {
@@ -15225,7 +18318,7 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', []).directive(
           function init() {
             $scope.creatingWallet = false;
             // use the login password by default
-            $scope.option = 'newWalletPw';
+            $scope.option = 'loginPw';
           }
           init();
         }
@@ -15263,7 +18356,10 @@ angular.module('BitGo.Wallet.WalletCreateStepsPasscodeDirective', []).directive(
           }
           scope.option = option;
           // Track the password option selected
-          var metricsData = { option: option };
+          var metricsData = {
+              option: option,
+              invitation: !!$rootScope.invitation
+            };
           AnalyticsProxy.track('SelectWalletPasscodeOption', metricsData);
         };
         /**
@@ -15318,7 +18414,6 @@ angular.module('BitGo.Wallet', [
   'BitGo.Wallet.WalletCreateStepsBackupkeyDirective',
   'BitGo.Wallet.WalletCreateStepsPasscodeDirective',
   'BitGo.Wallet.WalletCreateStepsActivateDirective',
-  'BitGo.Wallet.WalletCreateStepsInsureDirective',
   'BitGo.Wallet.WalletPolicyManagerDirective',
   'BitGo.Wallet.WalletPolicySpendingLimitDirective',
   'BitGo.Wallet.WalletPolicyWhitelistManagerDirective',
@@ -15331,7 +18426,8 @@ angular.module('BitGo.Wallet', [
   'BitGo.Wallet.WalletSettingsManagerDirective',
   'BitGo.Wallet.WalletSettingsGeneralFormDirective',
   'BitGo.Wallet.WalletSettingsPasscodeFormDirective',
-  'BitGo.Wallet.WalletRecoverController'
+  'BitGo.Wallet.WalletRecoverController',
+  'BitGo.API.SDK'
 ]);/**
  * @ngdoc directive
  * @name walletPolicyManager
@@ -15345,7 +18441,8 @@ angular.module('BitGo.Wallet.WalletPolicyManagerDirective', []).directive('walle
   '$rootScope',
   'NotifyService',
   'BG_DEV',
-  function ($rootScope, NotifyService, BG_DEV) {
+  'AnalyticsProxy',
+  function ($rootScope, NotifyService, BG_DEV, AnalyticsProxy) {
     return {
       restrict: 'A',
       controller: [
@@ -15410,6 +18507,7 @@ angular.module('BitGo.Wallet.WalletPolicyManagerDirective', []).directive('walle
           });
           function init() {
             $rootScope.setContext('walletPolicy');
+            AnalyticsProxy.track('WalletPolicyEntered');
             $scope.state = 'dailyLimit';
           }
           init();
@@ -15473,10 +18571,6 @@ angular.module('BitGo.Wallet.WalletPolicySpendingLimitDirective', []).directive(
           function amountValid(amount) {
             if (typeof amount === 'undefined') {
               $scope.setFormError('Please enter a valid limit.');
-              return false;
-            }
-            if (amount > BG_DEV.TX.MAXIMUM_BTC_SPENDING_LIMIT) {
-              $scope.setFormError('This amount is too large to use.');
               return false;
             }
             return true;
@@ -15554,7 +18648,7 @@ angular.module('BitGo.Wallet.WalletPolicySpendingLimitDirective', []).directive(
             $rootScope.wallets.current.addApproval(approval);
             // Then update the all pending approvals on the current enterprise
             // because the enterprise needs to know about all new pending approvals
-            $rootScope.enterprises.current.setApprovals($rootScope.wallets.all);
+            $rootScope.enterprises.current.setApprovals(approval);
             // reset the local/actual policy - no update is needed b/c of approval
             tryInitFromUserPolicy();
           }
@@ -15670,7 +18764,8 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistAddDirective', []).directive('
   'LabelsAPI',
   'WalletsAPI',
   'WalletModel',
-  function ($rootScope, NotifyService, PolicyAPI, LabelsAPI, WalletsAPI, WalletModel) {
+  'SDK',
+  function ($rootScope, NotifyService, PolicyAPI, LabelsAPI, WalletsAPI, WalletModel, SDK) {
     return {
       restrict: 'A',
       require: '^?walletPolicyWhitelistManager',
@@ -15680,7 +18775,7 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistAddDirective', []).directive('
           // data for an address to be added to the whitelist policy
           $scope.newAddress = null;
           function formIsValid() {
-            if (!Bitcoin.Address.validate($scope.newAddress.address)) {
+            if (!$scope.newAddress.address || !SDK.get().verifyAddress({ address: $scope.newAddress.address })) {
               $scope.setFormError('Please enter a valid bitcoin address.');
               return false;
             }
@@ -15716,6 +18811,7 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistAddDirective', []).directive('
                 bitcoinAddress: $rootScope.wallets.current.data.id,
                 rule: {
                   id: $scope.policy.id,
+                  type: 'bitcoinAddressWhitelist',
                   condition: { add: $scope.newAddress.address },
                   action: { type: 'getApproval' }
                 }
@@ -15764,7 +18860,8 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistManagerDirective', []).directi
   'BG_DEV',
   'InternalStateService',
   'AnalyticsProxy',
-  function ($rootScope, NotifyService, PolicyAPI, LabelsAPI, WalletsAPI, WalletModel, BG_DEV, InternalStateService, AnalyticsProxy) {
+  '$location',
+  function ($rootScope, NotifyService, PolicyAPI, LabelsAPI, WalletsAPI, WalletModel, BG_DEV, InternalStateService, AnalyticsProxy, $location) {
     // current section name
     var CURRENT_SECTION = 'whitelist';
     return {
@@ -15834,7 +18931,7 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistManagerDirective', []).directi
             $rootScope.wallets.current.addApproval(approval);
             // Then update the all pending approvals on the current enterprise
             // because the enterprise needs to know about all new pending approvals
-            $rootScope.enterprises.current.setApprovals($rootScope.wallets.all);
+            $rootScope.enterprises.current.setApprovals(approval);
             return true;
           }
           /**
@@ -15884,6 +18981,7 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistManagerDirective', []).directi
                 bitcoinAddress: $rootScope.wallets.current.data.id,
                 rule: {
                   id: $scope.policy.id,
+                  type: 'bitcoinAddressWhitelist',
                   condition: { remove: tileItem.address },
                   action: { type: 'getApproval' }
                 }
@@ -15939,13 +19037,13 @@ angular.module('BitGo.Wallet.WalletPolicyWhitelistManagerDirective', []).directi
       ],
       link: function (scope, ele, attrs) {
         /**
-        * Take the user to their account settings - plans page
+        * Take the user to the create org page
         *
         * @public
         */
-        scope.goToPlans = function () {
+        scope.goToCreateOrg = function () {
           AnalyticsProxy.track('clickUpsell', { type: 'whitelist' });
-          InternalStateService.goTo('personal_settings:plans');
+          $location.path('/create-organization');
         };
       }
     };
@@ -16207,11 +19305,13 @@ angular.module('BitGo.Wallet.WalletReceiveCurrentReceiveAddressManager', []).dir
   '$timeout',
   '$compile',
   '$http',
+  '$modal',
   '$templateCache',
   'NotifyService',
   'LabelsAPI',
   'BG_DEV',
-  function ($rootScope, $timeout, $compile, $http, $templateCache, NotifyService, LabelsAPI, BG_DEV) {
+  'ssAPI',
+  function ($rootScope, $timeout, $compile, $http, $modal, $templateCache, NotifyService, LabelsAPI, BG_DEV, ssAPI) {
     return {
       restrict: 'A',
       replace: true,
@@ -16219,6 +19319,22 @@ angular.module('BitGo.Wallet.WalletReceiveCurrentReceiveAddressManager', []).dir
       controller: [
         '$scope',
         function ($scope) {
+          // Open the modal when the user clicks on receive alt-coin
+          $scope.useAltCoin = function () {
+            var modalInstance = $modal.open({
+                templateUrl: 'modal/templates/ssReceiveAltCoin.html',
+                scope: $scope,
+                resolve: {
+                  locals: function () {
+                    return {
+                      userAction: BG_DEV.MODAL_USER_ACTIONS.ssReceiveAltCoin,
+                      type: BG_DEV.MODAL_TYPES.ssReceiveAltCoin
+                    };
+                  }
+                }
+              });
+            return modalInstance.result;
+          };
           // state to let user know when an address is being generated
           $scope.addressBeingGenerated = null;
           /**
@@ -16355,7 +19471,8 @@ angular.module('BitGo.Wallet.WalletReceiveManagerDirective', []).directive('wall
   'WalletsAPI',
   'LabelsAPI',
   'BG_DEV',
-  function ($q, $timeout, $rootScope, NotifyService, CacheService, UtilityService, InfiniteScrollService, WalletsAPI, LabelsAPI, BG_DEV) {
+  'AnalyticsProxy',
+  function ($q, $timeout, $rootScope, NotifyService, CacheService, UtilityService, InfiniteScrollService, WalletsAPI, LabelsAPI, BG_DEV, AnalyticsProxy) {
     return {
       restrict: 'A',
       require: '^?WalletController',
@@ -16396,8 +19513,8 @@ angular.module('BitGo.Wallet.WalletReceiveManagerDirective', []).directive('wall
          * @param {Bool} is the address the main/current receive address shown
          */
           $scope.decorateAddresses = function (params, isMainReceiveAddress) {
-            if (!params.index.toString()) {
-              // toString to account for 0 index
+            if (!params.index && params.index !== 0) {
+              // 0 index should be valid
               throw new Error('Invalid params');
             }
             var listItem;
@@ -16543,6 +19660,7 @@ angular.module('BitGo.Wallet.WalletReceiveManagerDirective', []).directive('wall
           }
           function init() {
             $rootScope.setContext('walletReceive');
+            AnalyticsProxy.track('WalletReceiveEntered');
             limit = 25;
             gettingAddresses = false;
             $scope.initAddressList();
@@ -16569,12 +19687,13 @@ angular.module('BitGo.Wallet.WalletRecoverController', []).controller('WalletRec
   '$rootScope',
   '$scope',
   'UtilityService',
+  'SDK',
   'BG_DEV',
   'NotifyService',
   'WalletsAPI',
   'KeychainsAPI',
   'WalletSharesAPI',
-  function ($modal, $rootScope, $scope, UtilityService, BG_DEV, NotifyService, WalletsAPI, KeychainsAPI, WalletSharesAPI) {
+  function ($modal, $rootScope, $scope, UtilityService, SDK, BG_DEV, NotifyService, WalletsAPI, KeychainsAPI, WalletSharesAPI) {
     // valid password type options
     var RECOVERY_OPTIONS = {
         keycard: 'keycard',
@@ -16693,9 +19812,9 @@ angular.module('BitGo.Wallet.WalletRecoverController', []).controller('WalletRec
      * @returns {String} user's decrypted private key || undefined
      * @private
      */
-    function decryptKeychain(encryptedXprv, passcode) {
+    function decryptKeychain(passcode, encryptedXprv) {
       try {
-        var privKey = UtilityService.Crypto.sjclDecrypt(passcode, encryptedXprv);
+        var privKey = SDK.decrypt(passcode, encryptedXprv);
         return privKey;
       } catch (e) {
         return;
@@ -16722,14 +19841,14 @@ angular.module('BitGo.Wallet.WalletRecoverController', []).controller('WalletRec
         // init a new bip32 object baced on the xprv provided
         var testBip32;
         try {
-          testBip32 = new Bitcoin.BIP32($scope.userInputRecoveryData.userXprv);
+          testBip32 = SDK.bitcoin.HDNode.fromBase58($scope.userInputRecoveryData.userXprv);
         } catch (e) {
           $scope.setFormError('Please enter a valid BIP32 master private key (xprv).');
           return;
         }
         var privateInfo = $rootScope.wallets.current.data.private;
         var userXpub = privateInfo.keychains[0].xpub;
-        var testXpub = testBip32.extended_public_key_string();
+        var testXpub = testBip32.neutered().toBase58();
         if (userXpub !== testXpub) {
           $scope.setFormError('Please enter a valid BIP32 master private key (xprv) for this wallet.');
           return;
@@ -16758,7 +19877,7 @@ angular.module('BitGo.Wallet.WalletRecoverController', []).controller('WalletRec
     $scope.recoverWithKeycardBoxD = function () {
       $scope.clearFormError();
       if (keycardBoxDFormValid()) {
-        var xprv = decryptKeychain($scope.walletRecoveryInfo.encryptedXprv, $scope.userInputRecoveryData.decryptedKeycardBoxD);
+        var xprv = decryptKeychain($scope.userInputRecoveryData.decryptedKeycardBoxD, $scope.walletRecoveryInfo.encryptedXprv);
         if (!xprv) {
           $scope.setFormError('Unable to decrypt with the JSON provided');
           return;
@@ -16827,7 +19946,7 @@ angular.module('BitGo.Wallet.WalletRecoverController', []).controller('WalletRec
         // Get the xpub for the xprv provided. It might not match with xpub on the wallet for legacy wallets
         var newBip32;
         try {
-          newBip32 = new Bitcoin.BIP32($scope.userInputRecoveryData.decryptedXprv);
+          newBip32 = SDK.bitcoin.HDNode.fromBase58($scope.userInputRecoveryData.decryptedXprv);
         } catch (e) {
           console.log(e.stack);
           NotifyService.error('There was an error with updating this keychain. Please refresh your page and try this again.');
@@ -16835,8 +19954,8 @@ angular.module('BitGo.Wallet.WalletRecoverController', []).controller('WalletRec
         }
         // encrypt the xprv with the user's new passcode
         var newKeychainData = {
-            encryptedXprv: UtilityService.Crypto.sjclEncrypt($scope.newPasscode, $scope.userInputRecoveryData.decryptedXprv),
-            xpub: newBip32.extended_public_key_string()
+            encryptedXprv: SDK.encrypt($scope.newPasscode, $scope.userInputRecoveryData.decryptedXprv),
+            xpub: newBip32.neutered().toBase58()
           };
         KeychainsAPI.update(newKeychainData).then(function (newKeychain) {
           // Then ensure we reset the updated wallet (with the new private data) in the app
@@ -16942,7 +20061,8 @@ angular.module('BitGo.Wallet.WalletSendManagerDirective', []).directive('walletS
   'TransactionsAPI',
   'SDK',
   'BG_DEV',
-  function ($q, $timeout, $rootScope, $location, NotifyService, CacheService, UtilityService, TransactionsAPI, SDK, BG_DEV) {
+  'AnalyticsProxy',
+  function ($q, $timeout, $rootScope, $location, NotifyService, CacheService, UtilityService, TransactionsAPI, SDK, BG_DEV, AnalyticsProxy) {
     return {
       restrict: 'A',
       require: '^WalletController',
@@ -16993,7 +20113,20 @@ angular.module('BitGo.Wallet.WalletSendManagerDirective', []).directive('walletS
               recipientWallet: null,
               recipientAddress: null,
               recipientAddressType: 'bitcoin',
-              message: null
+              message: null,
+              altCoin: {
+                useAltCoin: false,
+                selected: null,
+                symbol: null,
+                rate: 0,
+                limit: 0,
+                min: 0,
+                minerFee: 0,
+                rateSatoshis: 0,
+                recipientAddress: null,
+                returnAddres: null,
+                depositAddress: null
+              }
             };
           }
           // Creates a new pending transaction to be confirmed and send to the BitGo server
@@ -17020,7 +20153,9 @@ angular.module('BitGo.Wallet.WalletSendManagerDirective', []).directive('walletS
               // wallet id).
               return wallet.createTransaction({
                 recipients: recipients,
-                changeAddress: wallet.id()
+                changeAddress: wallet.id(),
+                minConfirms: 1,
+                enforceMinConfirmsForChange: false
               });
             }).then(function (res) {
               var txhex = res.transactionHex;
@@ -17035,6 +20170,7 @@ angular.module('BitGo.Wallet.WalletSendManagerDirective', []).directive('walletS
           };
           function init() {
             $rootScope.setContext('walletSend');
+            AnalyticsProxy.track('WalletSendEntered');
             $scope.state = 'prepareTx';
             $scope.showFeeAlert = false;
             setNewTxObject();
@@ -17062,7 +20198,8 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', []).directive('
   'BG_DEV',
   'AnalyticsProxy',
   'UserAPI',
-  function ($q, $filter, $modal, $timeout, $rootScope, NotifyService, TransactionsAPI, UtilityService, WalletsAPI, SDK, BG_DEV, AnalyticsProxy, UserAPI) {
+  'ssAPI',
+  function ($q, $filter, $modal, $timeout, $rootScope, NotifyService, TransactionsAPI, UtilityService, WalletsAPI, SDK, BG_DEV, AnalyticsProxy, UserAPI, ssAPI) {
     return {
       restrict: 'A',
       require: '^walletSendManager',
@@ -17087,6 +20224,15 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', []).directive('
             $scope.transactionNeedsApproval = null;
             clearReturnedTxData();
           }
+          $scope.getTotalAltCoin = function () {
+            var ssRateOnSatoshis = parseInt($scope.transaction.altCoin.rate * 100000000, 10);
+            var ssFee = parseInt($scope.transaction.altCoin.minerFee * 100000000, 10);
+            var totalAlt = $scope.transaction.amount * ssRateOnSatoshis;
+            totalAlt = totalAlt / 100000000;
+            totalAlt = totalAlt - ssFee;
+            totalAlt = totalAlt / 100000000;
+            return totalAlt;  // (((( transaction.amount * parseInt($scope.transaction.altCoin.rate*1e8, 10) )/1e8) - (parseInt(transaction.altCoin.minerFee*1e8,10)))*1e8)
+          };
           // Triggers otp modal to open if user needs to otp before sending a tx
           function openModal(params) {
             if (!params || !params.type) {
@@ -17121,31 +20267,12 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', []).directive('
             }));
           }
           function handleTxSendError(error) {
-            if (error.status === 202) {
-              // tx needs approval
-              // Mixpanel general data
-              var metricsData = {
-                  walletID: $rootScope.wallets.current.data.id,
-                  enterpriseID: $rootScope.enterprises.current.id,
-                  requiresApproval: true
-                };
-              // Set the confirmation time on the transaction's local object for the UI
-              $scope.transaction.confirmationTime = moment().format('MMMM Do YYYY, h:mm:ss A');
-              // Handle the success state in the UI
-              $scope.transactionSent = true;
-              $scope.processing = false;
-              // Track successful send
-              AnalyticsProxy.track('SendTx', metricsData);
-              // Set local data
-              $scope.returnedTransaction.approvalMessage = error.message;
-              $scope.returnedTransaction.needsApproval = true;
-              return WalletsAPI.getAllWallets();
-            } else if (UtilityService.API.isOtpError(error)) {
+            if (UtilityService.API.isOtpError(error)) {
               // If the user needs to OTP, use the modal to unlock their account
               openModal({ type: BG_DEV.MODAL_TYPES.otpThenUnlock }).then(function (result) {
                 if (result.type === 'otpThenUnlockSuccess') {
                   // set the otp code on the transaction object before resubmitting it
-                  $scope.transaction.otp = result.data.otp;
+                  // only set if an otp was required
                   $scope.transaction.passcode = result.data.password;
                   // resubmit the tx on window close
                   $scope.sendTx();
@@ -17170,11 +20297,9 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', []).directive('
               Raven.captureException(error, { tags: { loc: 'ciaffux5b0001sw52cnz1jpk7' } });
               $scope.processing = false;
               // Otherwise just display the error to the user
-              if (error && error.error) {
-                NotifyService.errorHandler(error);
-                return;
-              }
-              NotifyService.error('Your transaction was unable to be processed. Please ensure it does not violate any policies, then refresh your page and try sending again.');
+              var defaultMsg = 'Your transaction was unable to be processed. Please ensure it does not violate any policies, then refresh your page and try sending again.';
+              var errMsg = error && (error.error || error.message) || defaultMsg;
+              NotifyService.error(errMsg);
             }
           }
           /**
@@ -17222,14 +20347,14 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', []).directive('
             // the recipients of the transaction
             var recipients = {};
             recipients[$scope.pendingTransaction.recipient.address] = $scope.pendingTransaction.recipient.satoshis;
-            return UserAPI.session().then(function (data) {
-              if (data.session) {
+            return UserAPI.session().then(function (session) {
+              if (session) {
                 // if the data returned does not have an unlock object, then the user is not unlocked
-                if (!data.session.unlock) {
+                if (!session.unlock) {
                   return otpError();
                 } else {
                   // if the txvalue for this unlock exeeds transaction limit, we need to unlock again
-                  if (data.session.unlock.txValue !== 0 && $scope.pendingTransaction.recipient.satoshis > data.session.unlock.txValueLimit - data.session.unlock.txValue) {
+                  if (session.unlock.txValue !== 0 && $scope.pendingTransaction.recipient.satoshis > session.unlock.txValueLimit - session.unlock.txValue) {
                     return otpError();
                   }
                 }
@@ -17254,13 +20379,20 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', []).directive('
               return SDK.get().wallets().get({ id: walletId });
             }).then(function (res) {
               wallet = res;
-              return wallet.createTransaction({ recipients: recipients });
+              // set the same fee rate as when the transaction was prepared. (The fee can only change now if transaction inputs change)
+              return wallet.createTransaction({
+                recipients: recipients,
+                feeRate: $scope.transaction.feeRate,
+                minConfirms: 1,
+                enforceMinConfirmsForChange: false
+              });
             }).then(function (res) {
               txhex = res.transactionHex;
               // unsigned txhex
               unspents = res.unspents;
               var fee = res.fee;
               var prevFee = $scope.pendingTransaction.fee;
+              var txIsInstant = $scope.transaction.isInstant;
               $scope.pendingTransaction.fee = fee;
               $scope.transaction.blockchainFee = fee;
               if (prevFee !== fee) {
@@ -17277,10 +20409,7 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', []).directive('
                       message: 'Cannot transact. No user key is present on this wallet.'
                     }));
                   }
-                  keychain.xprv = SDK.get().decrypt({
-                    input: keychain.encryptedXprv,
-                    password: $scope.transaction.passcode
-                  });
+                  keychain.xprv = SDK.decrypt($scope.transaction.passcode, keychain.encryptedXprv);
                   return wallet.signTransaction({
                     transactionHex: txhex,
                     keychain: keychain,
@@ -17290,28 +20419,15 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', []).directive('
               } else if (wallet.type() === 'safe') {
                 // legacy support for safe wallets
                 var decryptSigningKey = function (account, passcode) {
-                  var findChainRoot = function (account) {
-                    if (account.chain && account.chain.parent) {
-                      var result = findChainRoot(account.chain.parent);
-                      if (result.key) {
-                        var chainCode = Bitcoin.Util.hexToBytes(account.chain.code);
-                        var eckey = Bitcoin.ECKey.createECKeyFromChain(result.key, chainCode);
-                        result.key = eckey.getWalletImportFormat();
-                      }
-                      return result;
-                    }
-                    // At the root, decrypt the priv key here.
-                    try {
-                      var privKey = SDK.get().decrypt({
-                          password: passcode,
-                          input: account.private.userPrivKey
-                        });
-                      return { key: privKey };
-                    } catch (e) {
-                      throw new Error('Invalid password: ' + e);
-                    }
-                  };
-                  return findChainRoot(account);
+                  if (account.chain) {
+                    throw new Error('This wallet is no longer supported by the BitGo web app. Please contact support@bitgo.com.');
+                  }
+                  try {
+                    var privKey = SDK.decrypt(passcode, account.private.userPrivKey);
+                    return { key: privKey };
+                  } catch (e) {
+                    throw new Error('Invalid password: ' + e);
+                  }
                 };
                 var passcode = $scope.transaction.passcode;
                 params = {
@@ -17335,27 +20451,42 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', []).directive('
                 throw new Error('failed to sign transaction');
               }
               signedtx.message = $scope.transaction.message;
+              signedtx.instant = $scope.transaction.isInstant ? true : false;
               return wallet.sendTransaction(signedtx);
             }).then(function (res) {
-              // transaction sent success
-              var hash = res.hash;
-              // Mixpanel general data
-              var metricsData = {
-                  walletID: $rootScope.wallets.current.data.id,
-                  enterpriseID: $rootScope.enterprises.current.id,
-                  requiresApproval: false
-                };
               // Set the confirmation time on the transaction's local object for the UI
               $scope.transaction.confirmationTime = moment().format('MMMM Do YYYY, h:mm:ss A');
               // Handle the success state in the UI
               $scope.transactionSent = true;
               $scope.processing = false;
+              // Mixpanel general data
+              var metricsData = {
+                  walletID: $rootScope.wallets.current.data.id,
+                  enterpriseID: $rootScope.enterprises.current.id,
+                  invitation: !!$rootScope.invitation
+                };
+              // tx needs approval
+              if (res.status === 'pendingApproval') {
+                metricsData.requiresApproval = true;
+                // Track successful send
+                AnalyticsProxy.track('SendTx', metricsData);
+                // Set local data
+                $scope.returnedTransaction.approvalMessage = res.error;
+                $scope.returnedTransaction.needsApproval = true;
+                return WalletsAPI.getAllWallets();
+              }
+              // transaction sent success
+              var hash = res.hash;
+              metricsData.requiresApproval = false;
               // Track successful send
               AnalyticsProxy.track('SendTx', metricsData);
               $scope.transaction.transactionId = hash;
               // Sync up the new balances data across the app
               return syncCurrentWallet();
             }).catch(function (error) {
+              if (error.message) {
+                error.error = error.message;
+              }
               handleTxSendError(error);
             });
           };
@@ -17395,14 +20526,28 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', []).directive('
   'UtilityService',
   'BG_DEV',
   'LabelsAPI',
-  function ($q, $rootScope, NotifyService, CacheService, UtilityService, BG_DEV, LabelsAPI) {
+  'SDK',
+  'featureFlags',
+  'ssAPI',
+  function ($q, $rootScope, NotifyService, CacheService, UtilityService, BG_DEV, LabelsAPI, SDK, featureFlags, ssAPI) {
     return {
       restrict: 'A',
       require: '^walletSendManager',
       controller: [
         '$scope',
         function ($scope) {
+          // Flag to indicate whether getting pair info from ShapeShift is in process
+          $scope.gatheringMarketInfo = false;
+          // This flag is passed to the ss-dropdown, to indicate whenever an error happen
+          $scope.hasAltErrors = false;
+          // Flag to indicate that an error ocurrs loading the AltCoins
+          $scope.unableToLoadAltCoins = false;
+          // Flag to indicate whether transaction creation is in process
           $scope.gatheringUnspents = false;
+          // Flag to show the dropdown, this variable will become true when user click on "Want to send.." link..
+          $scope.showAltCoinDropDown = false;
+          // Flag to show instant confirm advert
+          $scope.showInstantWalletAdvert = false;
           // form error constants
           var ERRORS = {
               invalidRecipient: {
@@ -17426,6 +20571,158 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', []).directive('
                 msg: 'This transaction amount is too small to send.'
               }
             };
+          /**
+        This object is used for the changing values from one input to another
+        by changing it on any of them
+        If user changes the BTC will automatically calculates the amount on the AltCoin
+        If user changes the AltCoin will automatically calculates the amount on the BTC
+        */
+          function CoinAmount() {
+            var bitcoins = null;
+            var altCoins = null;
+            // Clear amounts
+            var clearValues = function () {
+              altCoins = null;
+              bitcoins = null;
+              $scope.transaction.amount = null;
+            };
+            this.__defineGetter__('bitcoins', function () {
+              return bitcoins;
+            });
+            this.__defineGetter__('altCoins', function () {
+              return altCoins;
+            });
+            this.__defineSetter__('bitcoins', function (val) {
+              bitcoins = val;
+              if (!isNaN(val)) {
+                // Do we have a rate?
+                if ($scope.transaction.altCoin.rate !== null && $scope.transaction.altCoin.rate > 0) {
+                  /*
+                  We are using the satoshis converter so in order to have the correct
+                  rate on the altcoin we should make that calculations using integers
+                  */
+                  altCoins = bitcoins * ssAPI.decimalToInteger($scope.transaction.altCoin.rate);
+                  altCoins = ssAPI.integerToDecimal(altCoins);
+                  $scope.transaction.amount = bitcoins;
+                }
+              } else {
+                clearValues();
+              }
+            });
+            this.__defineSetter__('altCoins', function (val) {
+              altCoins = val;
+              if (!isNaN(val)) {
+                // Do we have a rate?
+                if ($scope.transaction.altCoin.rate !== null && $scope.transaction.altCoin.rate > 0) {
+                  /*
+                We are using the satoshis converter so in order to have the correct
+                rate on the altcoin we should make that calculations using integers
+                */
+                  bitcoins = val / ssAPI.decimalToInteger($scope.transaction.altCoin.rate);
+                  bitcoins = ssAPI.decimalToInteger(bitcoins);
+                  $scope.transaction.amount = bitcoins;
+                }
+              } else {
+                clearValues();
+              }
+            });
+          }
+          /**
+         If the message is null, we are going to set the initial one with the following:
+         Sent to {coin} address {address} via ShapeShift
+         First check if the user has change to use an AltCoin!, if not we don't want to change
+         nothing :) */
+          $scope.changeMemo = function () {
+            if (hasChangeCoin) {
+              var newAddress = $scope.transaction.altCoin.recipientAddress === null ? '' : $scope.transaction.altCoin.recipientAddress + ' ';
+              var newMessage = 'Sent to ' + $scope.transaction.altCoin.selected + ' address ' + newAddress + 'via ShapeShift';
+              $scope.transaction.message = newMessage;
+            }
+          };
+          var hasChangeCoin = false;
+          $scope.altCoinAmount = new CoinAmount();
+          function clearChangeCoinValues() {
+            // Clear if errors and clear values
+            hasChangeCoin = false;
+            $scope.hasAltErrors = false;
+            $scope.recipientInvalid = false;
+            $scope.recipientViewValue = null;
+            $scope.altCoinAmount.bitcoins = 0;
+            $scope.transaction.recipientLabel = null;
+            $scope.transaction.amount = null;
+            $scope.transaction.message = null;
+            $scope.transaction.altCoin.symbol = '--';
+            $scope.transaction.altCoin.rate = 0;
+            $scope.transaction.altCoin.recipientAddress = null;
+            $scope.transaction.altCoin.useAltCoin = false;
+          }
+          /**
+          This method handles the change even on the dropdown,
+          Everytime the user changes the coin we must clear some values
+          Like memo's, amounts, and others,
+          If the coin is an AltCoin we are going to call the API to bring us
+          the information about the pair btc_alt
+        */
+          $scope.changeCoin = function (coin) {
+            //
+            $scope.transaction.altCoin.selected = coin.name;
+            $scope.transaction.altCoin.image = coin.image;
+            // Clear the form from errors each time we change the coin
+            if (_.isFunction($scope.clearFormError)) {
+              $scope.clearFormError();
+            }
+            // Clear some scope values when user changes the coin
+            clearChangeCoinValues();
+            // Does the user selects an AltCoin? :)
+            if (coin.symbol !== 'BTC') {
+              $scope.transaction.altCoin.useAltCoin = true;
+              $scope.transaction.recipientLabel = null;
+              hasChangeCoin = true;
+              // Change the memo when the user changes the type of coin
+              $scope.changeMemo();
+              // Get coin information! Rate and limits!
+              getMarketInfo(coin.name);
+            }
+          };
+          function showShapeshiftError(msg) {
+            var shapeshiftError = null;
+            // Try to find the error on the ShapeShift error dictionary, if the error is found means
+            // that a known error happens on the shapeshift flow.
+            shapeshiftError = ssAPI.getError(msg);
+            if (shapeshiftError !== null) {
+              // Show the error at the top of the page
+              $scope.setFormError(shapeshiftError.msg);
+              // Move the user to the top of the page
+              window.scrollTo(0, 0);
+            }
+            return shapeshiftError;
+          }
+          function getMarketInfo(name) {
+            // Disable dropdown and change text on the button by changing this flag
+            $scope.gatheringMarketInfo = true;
+            ssAPI.getMarketInfo(name).then(function (altCoin) {
+              // Fill required data for shapeshift exchange.
+              $scope.transaction.altCoin.rate = altCoin.rate;
+              $scope.transaction.altCoin.limit = altCoin.limit;
+              $scope.transaction.altCoin.min = altCoin.min;
+              $scope.transaction.altCoin.minerFee = altCoin.minerFee;
+              $scope.transaction.altCoin.symbol = altCoin.symbol;
+            }).catch(function (error) {
+              // Disable next button until user selects another coin that does not have errors :
+              $scope.hasAltErrors = true;
+              showShapeshiftError(error);
+            }).finally(function () {
+              // Enable things back.
+              $scope.gatheringMarketInfo = false;
+            });
+          }
+          /**
+          Handles the ng-click event for the link "Want to send AltCoin",
+          by toogle this flag, will show the dropdown and hide the link
+        */
+          $scope.useAltCoin = function () {
+            $scope.showAltCoinDropDown = true;
+          };
           // shows the labeling field for the recipient address if it was manually
           // entered by the user
           $scope.showRecipientLabelField = function () {
@@ -17450,7 +20747,7 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', []).directive('
           function saveLabel() {
             if ($scope.transaction.recipientLabel) {
               var fromWallet = $rootScope.wallets.current;
-              var validBtcAddress = Bitcoin.Address.validate($scope.transaction.recipientAddress);
+              var validBtcAddress = SDK.get().verifyAddress({ address: $scope.transaction.recipientAddress });
               if (validBtcAddress) {
                 var params = {
                     walletId: fromWallet.data.id,
@@ -17464,15 +20761,28 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', []).directive('
               }
             }
           }
+          // function to set error on form and turn off processing flag
+          function setErrorOnForm(errMsg) {
+            if (!errMsg || typeof errMsg !== 'string') {
+              throw new Error('Invalid form error');
+            }
+            $scope.setFormError(errMsg);
+            $scope.gatheringUnspents = false;
+          }
           // Validate the transaciton input form
           function txIsValid() {
             var balance;
             var currentWallet;
             var currentWalletAddress;
             var validRecipientAddress;
+            // ensure if recipient address is present
+            if (!$scope.transaction.recipientAddress) {
+              setErrorOnForm(ERRORS.invalidRecipient.msg);
+              return false;
+            }
             try {
               // Wallet checking
-              validRecipientAddress = Bitcoin.Address.validate($scope.transaction.recipientAddress);
+              validRecipientAddress = $scope.transaction.altCoin.useAltCoin === true ? true : SDK.get().verifyAddress({ address: $scope.transaction.recipientAddress });
               currentWallet = $rootScope.wallets.current;
               currentWalletAddress = currentWallet.data.id;
               // Funds checking
@@ -17483,23 +20793,49 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', []).directive('
             }
             // ensure a valid recipient address
             if (!validRecipientAddress) {
-              $scope.setFormError(ERRORS.invalidRecipient.msg);
+              setErrorOnForm(ERRORS.invalidRecipient.msg);
               return false;
             }
             // ensure they're not sending coins to this wallet's address
             if ($scope.transaction.recipientAddress === currentWalletAddress) {
-              $scope.setFormError(ERRORS.sendToSelf.msg);
+              setErrorOnForm(ERRORS.sendToSelf.msg);
               return false;
             }
             // ensure a valid amount
             if (!parseFloat($scope.transaction.amount)) {
-              $scope.setFormError(ERRORS.invalidAmount.msg);
+              setErrorOnForm(ERRORS.invalidAmount.msg);
+              return false;
+            }
+            // ensure they are not entering an amount greater than they're balance
+            if ($scope.transaction.amount > balance) {
+              setErrorOnForm(ERRORS.insufficientFunds.msg);
               return false;
             }
             // ensure amount is greater than the minimum dust value
             if ($scope.transaction.amount <= BG_DEV.TX.MINIMUM_BTC_DUST) {
-              $scope.setFormError(ERRORS.amountTooSmall.msg);
+              setErrorOnForm(ERRORS.amountTooSmall.msg);
               return false;
+            }
+            // ShapeShift validations
+            if ($scope.transaction.altCoin.useAltCoin) {
+              // If user checks the box but not selects a type of coin let's throw an exception
+              if ($scope.transaction.altCoin.selected === null) {
+                showShapeshiftError('unableToGetSelectedCoin');
+                return false;
+              }
+              // Get back the satoshis to the original value on bitcoins
+              var amount = ssAPI.integerToDecimal($scope.transaction.amount);
+              // Does the transaction exceed the shapeshift limit?
+              if (amount > $scope.transaction.altCoin.limit) {
+                showShapeshiftError('limitExceeded');
+                return false;
+              }
+              // Shapeshift also has a lower limit, are we trying to sent lower than that?
+              if (amount < $scope.transaction.altCoin.min) {
+                showShapeshiftError('underLimit');
+                // handled on the catch block
+                return false;
+              }
             }
             return true;
           }
@@ -17518,10 +20854,42 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', []).directive('
                 message: $scope.transaction.message,
                 suppressEmail: false
               };
-            // Create the scope's pending transaction
-            return $scope.createPendingTransaction(sender, recipient).then(function () {
-              saveLabel();
-            });
+            var createPendingTransaction = function () {
+              return $scope.createPendingTransaction(sender, recipient).then(function () {
+                saveLabel();
+              });
+            };
+            // If we are using an alt-coin, let's use the shapeshift api to get the coin information
+            if ($scope.transaction.altCoin.useAltCoin) {
+              // Set other required data
+              $scope.transaction.altCoin.returnAddress = $rootScope.wallets.current.data.id;
+              var shiftParams = ssAPI.getShiftParams($scope.transaction.altCoin);
+              // Get the deposit address from Shapeshift!
+              return ssAPI.shift(shiftParams).then(function (data) {
+                // Something happens with Shapeshift? We should not hit
+                // this statement ever.
+                if (_.isUndefined(data) || data === null) {
+                  throw new Error('unableToGetDepositAddress');
+                }
+                // Does Shapeshift return an error? :(
+                if (!_.isUndefined(data.error)) {
+                  // Let's raise the exception to be handled on the catch block
+                  throw new Error(data.error);  // handled on the catch block
+                }
+                // Let's make sure to receive the deposit address
+                if (typeof data.deposit !== 'undefined') {
+                  // Let's set the deposit address :D
+                  $scope.transaction.altCoin.depositAddress = data.deposit;
+                  // Assign new deposit address
+                  $scope.transaction.recipientAddress = data.deposit;
+                  recipient.address = data.deposit;
+                } else {
+                  throw new Error('unableToGetDepositAddress');
+                }
+              }).then(createPendingTransaction);
+            } else {
+              return createPendingTransaction();
+            }
           }
           // advances the transaction state if the for and inputs are valid
           $scope.advanceTransaction = function (amountSpendWasReduced) {
@@ -17537,6 +20905,13 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', []).directive('
             // gets recomputed each time.
             $scope.transaction.amountSpendWasReduced = amountSpendWasReduced;
             $scope.gatheringUnspents = true;
+            /**
+            Since we are using a separate control when using alt-coins,
+            lets set the value of the control to the transaction recipient
+          */
+            if ($scope.transaction.altCoin.useAltCoin) {
+              $scope.transaction.recipientAddress = $scope.transaction.altCoin.recipientAddress;
+            }
             $scope.clearFormError();
             if (txIsValid()) {
               return prepareTx().then(function () {
@@ -17545,6 +20920,8 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', []).directive('
               }).catch(function (error) {
                 $scope.gatheringUnspents = false;
                 if (error == 'Error: Insufficient funds') {
+                  var fee = error.result.fee;
+                  var available = error.result.available;
                   // An insufficient funds error might happen for a few reasons.
                   // The user might spending way more money than they have, in
                   // which case this is an actual error. Or an insufficient funds
@@ -17552,7 +20929,7 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', []).directive('
                   // less than their total balance, and they don't have enough
                   // money to pay the balance. If the former, throw an error, if
                   // the latter, we try to handle it specially, explained below.
-                  if (typeof error.fee === 'undefined' || error.fee >= $scope.transaction.amount) {
+                  if (typeof fee === 'undefined' || fee >= $scope.transaction.amount) {
                     NotifyService.error('You do not have enough funds in your wallet to pay for the blockchain fees for this transaction.');
                   } else {
                     // If the user is trying to spend a large amount and they
@@ -17565,16 +20942,26 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', []).directive('
                     // automaticallySubtractinFee variable so that the client can
                     // optionally display a warning if desired.
                     if (!amountSpendWasReduced) {
-                      amountSpendWasReduced = $scope.transaction.amount - (error.available - error.fee);
-                      $scope.transaction.amount = error.available - error.fee;
+                      amountSpendWasReduced = $scope.transaction.amount - (available - fee);
+                      // If the amount reduced is  too large (this can happen when not enough confirmed funds) or the fee exceeds available amount -> notify user  
+                      if (amountSpendWasReduced > 1000000 || available - fee <= 0) {
+                        NotifyService.error('You do not have enough confirmed funds in your wallet.');
+                        return;
+                      }
+                      $scope.transaction.amount = available - fee;
                       $scope.advanceTransaction(amountSpendWasReduced);
                     } else {
                       NotifyService.error('You do not have enough funds in your wallet to pay for the blockchain fees for this transaction.');
                     }
                   }
                 } else {
-                  Raven.captureException(error, { tags: { loc: 'ciaffxsd00000wc52djlzz2tp' } });
-                  NotifyService.error('Your transaction was unable to be processed. Please ensure it does not violate any policies, then refresh your page and try sending again.');
+                  // Try to find the error on the ShapeShift error dictionary, if the error is found means
+                  // that a known error happens on the shapeshift flow.
+                  if (showShapeshiftError(error) === null) {
+                    // Default case
+                    Raven.captureException(error, { tags: { loc: 'ciaffxsd00000wc52djlzz2tp' } });
+                    NotifyService.error('Your transaction was unable to be processed. Please ensure it does not violate any policies, then refresh your page and try sending again.');
+                  }
                 }
               });
             }
@@ -17585,6 +20972,12 @@ angular.module('BitGo.Wallet.WalletSendStepsPrepareTxDirective', []).directive('
             return $q(function (resolve, reject) {
               return resolve(false);
             });
+          };
+          /**
+          Handles the ng-click event for the Instant Transaction advert
+        */
+          $scope.toggleAdvert = function () {
+            $scope.showInstantWalletAdvert = !$scope.showInstantWalletAdvert;
           };
           function init() {
             if (!$scope.transaction) {
@@ -17605,7 +20998,8 @@ angular.module('BitGo.Wallet.WalletSendStepsTypeahead', []).directive('walletSen
   '$rootScope',
   'LabelsAPI',
   'WalletsAPI',
-  function ($q, $rootScope, LabelsAPI, WalletsAPI) {
+  'SDK',
+  function ($q, $rootScope, LabelsAPI, WalletsAPI, SDK) {
     return {
       restrict: 'A',
       require: '^walletSendStepsPrepareTx',
@@ -17689,15 +21083,16 @@ angular.module('BitGo.Wallet.WalletSendStepsTypeahead', []).directive('walletSen
                 address = $scope.transaction.recipientAddress;
               }
               // If the recipient is valid, set the address on the transaction object
-              $scope.recipientInvalid = !Bitcoin.Address.validate(address);
+              // If we are using an alt-coin we are going to delegate the address validation to Shapeshift
+              $scope.recipientInvalid = $scope.transaction.altCoin.useAltCoin === true ? false : !SDK.get().verifyAddress({ address: address });
               if (!$scope.recipientInvalid) {
                 // if the user pasted in a valid address that has an existing label
                 // set it in the label field manually so they know it's already labeled
                 if (manuallyEntered) {
                   setLabelFromManuallyEnteredAddress(address);
                 }
-                $scope.transaction.recipientAddress = address;
               }
+              $scope.transaction.recipientAddress = address;
               $scope.$apply();
             }, 100);
           };
@@ -17989,7 +21384,8 @@ angular.module('BitGo.Wallet.WalletSettingsPasscodeFormDirective', []).directive
   'KeychainsAPI',
   'NotifyService',
   'BG_DEV',
-  function ($q, $rootScope, $modal, UtilityService, WalletsAPI, KeychainsAPI, NotifyService, BG_DEV) {
+  'SDK',
+  function ($q, $rootScope, $modal, UtilityService, WalletsAPI, KeychainsAPI, NotifyService, BG_DEV, SDK) {
     return {
       restrict: 'A',
       controller: [
@@ -18082,14 +21478,14 @@ angular.module('BitGo.Wallet.WalletSettingsPasscodeFormDirective', []).directive
           }
           /**
          * Attempt to decrypt an encrypted xPrv with a password
-         * @param encryptedXprv {String} wallet's user encryptedXprv
          * @param passcode {String} existing (old) wallet passcode
+         * @param encryptedXprv {String} wallet's user encryptedXprv
          * @returns {String} user's decrypted private key || undefined
          * @private
          */
-          function decryptKeychain(encryptedXprv, passcode) {
+          function decryptKeychain(passcode, encryptedXprv) {
             try {
-              var privKey = UtilityService.Crypto.sjclDecrypt(passcode, encryptedXprv);
+              var privKey = SDK.decrypt(passcode, encryptedXprv);
               return privKey;
             } catch (e) {
               return;
@@ -18107,7 +21503,7 @@ angular.module('BitGo.Wallet.WalletSettingsPasscodeFormDirective', []).directive
               var userPath = privateInfo.keychains[0].path;
               KeychainsAPI.get(userXpub).then(function (keychain) {
                 // attempt to decrypt the xprv with the password provided
-                var xprv = decryptKeychain(keychain.encryptedXprv, $scope.oldPasscode);
+                var xprv = decryptKeychain($scope.oldPasscode, keychain.encryptedXprv);
                 if (!xprv) {
                   var error = {
                       status: 401,
@@ -18119,7 +21515,8 @@ angular.module('BitGo.Wallet.WalletSettingsPasscodeFormDirective', []).directive
                 // Get the xpub for the xprv provided. It might not match with xpub on the wallet for legacy wallets
                 var newBip32;
                 try {
-                  newBip32 = new Bitcoin.BIP32(xprv);
+                  newBip32 = SDK.bitcoin.HDNode.fromBase58(xprv);
+                  console.assert(newBip32.privKey);
                 } catch (e) {
                   console.log(e.stack);
                   var error = { error: 'There was an error with updating this password. Please refresh your page and try this again.' };
@@ -18127,8 +21524,8 @@ angular.module('BitGo.Wallet.WalletSettingsPasscodeFormDirective', []).directive
                 }
                 // encrypt the xprv with the user's new passcode
                 var newKeychainData = {
-                    encryptedXprv: UtilityService.Crypto.sjclEncrypt($scope.newPasscode, xprv),
-                    xpub: newBip32.extended_public_key_string()
+                    encryptedXprv: SDK.encrypt($scope.newPasscode, xprv),
+                    xpub: newBip32.neutered().toBase58()
                   };
                 return KeychainsAPI.update(newKeychainData);
               }).then(function (newKeychain) {
@@ -18412,7 +21809,8 @@ angular.module('BitGo.Wallet.WalletTransactionsManagerDirective', []).directive(
   'TransactionsAPI',
   'InfiniteScrollService',
   'WalletsAPI',
-  function ($q, $timeout, $rootScope, $location, NotifyService, CacheService, UtilityService, TransactionsAPI, InfiniteScrollService, WalletsAPI) {
+  'AnalyticsProxy',
+  function ($q, $timeout, $rootScope, $location, NotifyService, CacheService, UtilityService, TransactionsAPI, InfiniteScrollService, WalletsAPI, AnalyticsProxy) {
     return {
       restrict: 'A',
       require: '^WalletController',
@@ -18648,6 +22046,7 @@ angular.module('BitGo.Wallet.WalletTransactionsManagerDirective', []).directive(
           }
           function init() {
             $rootScope.setContext('walletTransactions');
+            AnalyticsProxy.track('WalletTransactionsEntered');
             // initialize locals
             limit = 25;
             syncCounter = 0;
@@ -18711,7 +22110,7 @@ angular.module('BitGo.Wallet.WalletUserListDirective', []).directive('walletUser
           if (!walletShareId) {
             throw new Error('Expect walletShareId to be set');
           }
-          WalletSharesAPI.resendEmail({ shareId: walletShareId }).then(function (result) {
+          WalletSharesAPI.resendEmail({ walletShareId: walletShareId }).then(function (result) {
             Notify.success('Wallet invite email was re-sent.');
           }).catch(Notify.errorHandler);
         };
@@ -18719,7 +22118,7 @@ angular.module('BitGo.Wallet.WalletUserListDirective', []).directive('walletUser
           if (!walletShareId) {
             throw new Error('Expect walletShareId to be set');
           }
-          WalletSharesAPI.cancelShare({ shareId: walletShareId }).then(function (result) {
+          WalletSharesAPI.cancelShare({ walletShareId: walletShareId }).then(function (result) {
             $('#' + walletShareId).animate({
               height: 0,
               opacity: 0
@@ -18738,7 +22137,8 @@ angular.module('BitGo.Wallet.WalletUserListDirective', []).directive('walletUser
   'UtilityService',
   'RequiredActionService',
   'BG_DEV',
-  function (Util, RequiredActionService, BG_DEV) {
+  'AnalyticsProxy',
+  function (Util, RequiredActionService, BG_DEV, AnalyticsProxy) {
     return {
       restrict: 'A',
       require: '^WalletController',
@@ -18793,6 +22193,7 @@ angular.module('BitGo.Wallet.WalletUserListDirective', []).directive('walletUser
           });
           function init() {
             $rootScope.setContext('walletUsers');
+            AnalyticsProxy.track('WalletUsersEntered');
             $scope.state = 'showAllUsers';
           }
           init();

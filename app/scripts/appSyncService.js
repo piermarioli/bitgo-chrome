@@ -6,8 +6,8 @@
  */
 angular.module('BitGo.App.SyncService', [])
 
-.factory('SyncService', ['$rootScope', '$timeout', 'EnterpriseAPI', 'WalletsAPI', 'WalletSharesAPI',
-  function($rootScope, $timeout, EnterpriseAPI, WalletsAPI, WalletSharesAPI) {
+.factory('SyncService', ['$rootScope', '$timeout', 'EnterpriseAPI', 'WalletsAPI', 'WalletSharesAPI', '$location', 'NotifyService', '$q', 'MatchwalletAPI', 'ApprovalsAPI',
+  function($rootScope, $timeout, EnterpriseAPI, WalletsAPI, WalletSharesAPI, $location, Notify, $q, MatchwalletAPI, ApprovalsAPI) {
     // constant used to ensure we throttle the sync calls (if wanted)
     var SYNC_TIMEOUT;
     // global sync throttle timeout

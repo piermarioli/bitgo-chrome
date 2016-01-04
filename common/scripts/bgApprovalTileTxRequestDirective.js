@@ -94,16 +94,13 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', [])
          * @private
          */
         function getRecipients(txhex) {
-          var tx = Bitcoin.Transaction.deserialize(Bitcoin.Util.hexToBytes(txhex));
+          var bitcoin = SDK.bitcoin;
+          var tx = bitcoin.Transaction.fromHex(txhex);
           var recipients = {}; // note that this includes change addresses
-          tx.outs.forEach(function(txout, idx) {
-            var oldOutput = tx.outs[idx];
-            var outputAddresses = [];
-            oldOutput.script.extractAddresses(outputAddresses);
-            var address = outputAddresses[0].toString();
-            var recipient = {};
+          tx.outs.forEach(function(txout) {
+            var address = bitcoin.Address.fromOutputScript(txout.script, SDK.getNetwork()).toBase58Check();
             if (typeof recipients[address] === 'undefined') {
-              recipients[address] = oldOutput.value; // value is measured in satoshis
+              recipients[address] = txout.value; // value is measured in satoshis
             } else {
               // The SDK's API does not support sending multiple different
               // values to the same address. We have no choice but to throw an
@@ -154,14 +151,14 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', [])
 
           var txhex, wallet, unspents;
           return UserAPI.session()
-          .then(function(data){
-            if (data.session) {
+          .then(function(session){
+            if (session) {
               // if the data returned does not have an unlock object, then the user is not unlocked
-              if (!data.session.unlock) {
+              if (!session.unlock) {
                 return otpError();
               } else {
                 // if the txvalue for this unlock exeeds transaction limit, we need to unlock again
-                if (data.session.unlock.txValue !== 0 && scope.txInfo.transaction.requestedAmount > (data.session.unlock.txValueLimit - data.session.unlock.txValue)) {
+                if (session.unlock.txValue !== 0 && scope.txInfo.transaction.requestedAmount > (session.unlock.txValueLimit - session.unlock.txValue)) {
                   return otpError();
                 }
               }
@@ -171,7 +168,11 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', [])
           })
           .then(function(res) {
             wallet = res;
-            return wallet.createTransaction({ recipients: recipients });
+            return wallet.createTransaction({
+              recipients: recipients,
+              minConfirms: 1,
+              enforceMinConfirmsForChange: false
+            });
           })
           .then(function(res) {
             txhex = res.transactionHex; // unsigned txhex
@@ -180,7 +181,7 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', [])
             return wallet.getEncryptedUserKeychain({});
           })
           .then(function(keychain) {
-            // check if we have the passcode. 
+            // check if we have the passcode.
             // Incase the user has been unlocked, we dont have the passcode and need to return an error to pop up the modal
             if (!scope.txInfo.passcode) {
               return $q.reject(UtilityService.ErrorHelper({
@@ -197,7 +198,7 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', [])
                 message: "Cannot transact. No user key is present on this wallet."
               }));
             }
-            keychain.xprv = SDK.get().decrypt({ input: keychain.encryptedXprv, password: scope.txInfo.passcode });
+            keychain.xprv = SDK.decrypt(scope.txInfo.passcode, keychain.encryptedXprv);
             return wallet.signTransaction({ transactionHex: txhex, keychain: keychain, unspents: unspents });
           })
           .then(function(tx) {
@@ -210,7 +211,7 @@ angular.module('BitGo.Common.BGApprovalTileTxRequestDirective', [])
               openModal({ type: BG_DEV.MODAL_TYPES.otpThenUnlock })
               .then(function(result) {
                 if (result.type === 'otpThenUnlockSuccess') {
-                  if (!result.data.otp) {
+                  if (!result.data.otp && $rootScope.currentUser.settings.otpDevices > 0) {
                     throw new Error('Missing otp');
                   }
                   if (!result.data.password) {

@@ -4,8 +4,8 @@
  */
 angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', [])
 
-.directive('walletSendStepsConfirmTx', ['$q', '$filter', '$modal', '$timeout', '$rootScope', 'NotifyService', 'TransactionsAPI', 'UtilityService', 'WalletsAPI', 'SDK', 'BG_DEV', 'AnalyticsProxy', 'UserAPI',
-  function($q, $filter, $modal, $timeout, $rootScope, NotifyService, TransactionsAPI, UtilityService, WalletsAPI, SDK, BG_DEV, AnalyticsProxy, UserAPI) {
+.directive('walletSendStepsConfirmTx', ['$q', '$filter', '$modal', '$timeout', '$rootScope', 'NotifyService', 'TransactionsAPI', 'UtilityService', 'WalletsAPI', 'SDK', 'BG_DEV', 'AnalyticsProxy', 'UserAPI', 'ssAPI',
+  function($q, $filter, $modal, $timeout, $rootScope, NotifyService, TransactionsAPI, UtilityService, WalletsAPI, SDK, BG_DEV, AnalyticsProxy, UserAPI,ssAPI) {
     return {
       restrict: 'A',
       require: '^walletSendManager', // explicitly require it
@@ -30,6 +30,20 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', [])
           $scope.transactionNeedsApproval = null;
           clearReturnedTxData();
         }
+
+        $scope.getTotalAltCoin = function() {
+
+          var ssRateOnSatoshis = parseInt($scope.transaction.altCoin.rate*1e8, 10);
+          var ssFee            = parseInt($scope.transaction.altCoin.minerFee*1e8, 10);
+
+          var totalAlt         = $scope.transaction.amount * ssRateOnSatoshis;
+          totalAlt             = totalAlt / 1e8;
+          totalAlt             = totalAlt - ssFee;
+          totalAlt             = totalAlt / 1e8;
+          return totalAlt;
+
+          // (((( transaction.amount * parseInt($scope.transaction.altCoin.rate*1e8, 10) )/1e8) - (parseInt(transaction.altCoin.minerFee*1e8,10)))*1e8)
+       };
 
         // Triggers otp modal to open if user needs to otp before sending a tx
         function openModal(params) {
@@ -65,36 +79,13 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', [])
         }
 
         function handleTxSendError(error) {
-          if (error.status === 202) {
-            // tx needs approval
-
-            // Mixpanel general data
-            var metricsData = {
-              walletID: $rootScope.wallets.current.data.id,
-              enterpriseID: $rootScope.enterprises.current.id,
-              requiresApproval: true
-            };
-
-            // Set the confirmation time on the transaction's local object for the UI
-            $scope.transaction.confirmationTime = moment().format('MMMM Do YYYY, h:mm:ss A');
-            // Handle the success state in the UI
-            $scope.transactionSent = true;
-            $scope.processing = false;
-
-            // Track successful send
-            AnalyticsProxy.track('SendTx', metricsData);
-
-            // Set local data
-            $scope.returnedTransaction.approvalMessage = error.message;
-            $scope.returnedTransaction.needsApproval = true;
-            return WalletsAPI.getAllWallets();
-          } else if (UtilityService.API.isOtpError(error)) {
+          if (UtilityService.API.isOtpError(error)) {
             // If the user needs to OTP, use the modal to unlock their account
             openModal({ type: BG_DEV.MODAL_TYPES.otpThenUnlock })
             .then(function(result) {
               if (result.type === 'otpThenUnlockSuccess') {
                 // set the otp code on the transaction object before resubmitting it
-                $scope.transaction.otp = result.data.otp;
+                // only set if an otp was required
                 $scope.transaction.passcode = result.data.password;
                 // resubmit the tx on window close
                 $scope.sendTx();
@@ -122,11 +113,9 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', [])
             Raven.captureException(error, { tags: { loc: 'ciaffux5b0001sw52cnz1jpk7' }});
             $scope.processing = false;
             // Otherwise just display the error to the user
-            if (error && error.error) {
-              NotifyService.errorHandler(error);
-              return;
-            }
-            NotifyService.error('Your transaction was unable to be processed. Please ensure it does not violate any policies, then refresh your page and try sending again.');
+            var defaultMsg = 'Your transaction was unable to be processed. Please ensure it does not violate any policies, then refresh your page and try sending again.';
+            var errMsg = (error && (error.error || error.message)) || defaultMsg;
+            NotifyService.error(errMsg);
           }
         }
 
@@ -184,14 +173,14 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', [])
           recipients[$scope.pendingTransaction.recipient.address] = $scope.pendingTransaction.recipient.satoshis;
 
           return UserAPI.session()
-          .then(function(data){
-            if (data.session) {
+          .then(function(session){
+            if (session) {
               // if the data returned does not have an unlock object, then the user is not unlocked
-              if (!data.session.unlock) {
+              if (!session.unlock) {
                 return otpError();
               } else {
                 // if the txvalue for this unlock exeeds transaction limit, we need to unlock again
-                if (data.session.unlock.txValue !== 0 && $scope.pendingTransaction.recipient.satoshis > (data.session.unlock.txValueLimit - data.session.unlock.txValue)) {
+                if (session.unlock.txValue !== 0 && $scope.pendingTransaction.recipient.satoshis > (session.unlock.txValueLimit - session.unlock.txValue)) {
                   return otpError();
                 }
               }
@@ -210,20 +199,29 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', [])
                 message: "Missing password"
               }));
             }
-          }).then(function() {
+          })
+          .then(function() {
             return SDK.get().wallets().get({ id: walletId });
           })
           .then(function(res) {
             wallet = res;
-            return wallet.createTransaction({ recipients: recipients });
+            // set the same fee rate as when the transaction was prepared. (The fee can only change now if transaction inputs change)
+            return wallet.createTransaction({
+              recipients: recipients,
+              feeRate: $scope.transaction.feeRate,
+              minConfirms: 1,
+              enforceMinConfirmsForChange: false
+            });
           })
           .then(function(res) {
             txhex = res.transactionHex; // unsigned txhex
             unspents = res.unspents;
             var fee = res.fee;
             var prevFee = $scope.pendingTransaction.fee;
+            var txIsInstant = $scope.transaction.isInstant;
             $scope.pendingTransaction.fee = fee;
             $scope.transaction.blockchainFee = fee;
+ 
             if (prevFee !== fee) {
               throw new Error('Transaction inputs have changed - please reconfirm fees');
             }
@@ -240,31 +238,21 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', [])
                     message: "Cannot transact. No user key is present on this wallet."
                   }));
                 }
-                keychain.xprv = SDK.get().decrypt({ input: keychain.encryptedXprv, password: $scope.transaction.passcode });
+                keychain.xprv = SDK.decrypt($scope.transaction.passcode, keychain.encryptedXprv);
                 return wallet.signTransaction({ transactionHex: txhex, keychain: keychain, unspents: unspents });
               });
             } else if (wallet.type() === 'safe') {
               // legacy support for safe wallets
               var decryptSigningKey = function(account, passcode) {
-                var findChainRoot = function(account) {
-                  if (account.chain && account.chain.parent) {
-                    var result = findChainRoot(account.chain.parent);
-                    if (result.key) {
-                      var chainCode = Bitcoin.Util.hexToBytes(account.chain.code);
-                      var eckey = Bitcoin.ECKey.createECKeyFromChain(result.key, chainCode);
-                      result.key = eckey.getWalletImportFormat();
-                    }
-                    return result;
-                  }
-                  // At the root, decrypt the priv key here.
-                  try {
-                    var privKey = SDK.get().decrypt({password: passcode, input: account.private.userPrivKey});
-                    return { key: privKey };
-                  } catch (e) {
-                    throw new Error('Invalid password: ' + e);
-                  }
-                };
-                return findChainRoot(account);
+                if (account.chain) {
+                  throw new Error('This wallet is no longer supported by the BitGo web app. Please contact support@bitgo.com.');
+                }
+                try {
+                  var privKey = SDK.decrypt(passcode, account.private.userPrivKey);
+                  return { key: privKey };
+                } catch (e) {
+                  throw new Error('Invalid password: ' + e);
+                }
               };
 
               var passcode = $scope.transaction.passcode;
@@ -287,24 +275,41 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', [])
               throw new Error('failed to sign transaction');
             }
             signedtx.message = $scope.transaction.message;
+            signedtx.instant = $scope.transaction.isInstant ? true : false;
             return wallet.sendTransaction(signedtx);
           })
           .then(function(res) {
-            // transaction sent success
-            var hash = res.hash;
-
-            // Mixpanel general data
-            var metricsData = {
-              walletID: $rootScope.wallets.current.data.id,
-              enterpriseID: $rootScope.enterprises.current.id,
-              requiresApproval: false
-            };
 
             // Set the confirmation time on the transaction's local object for the UI
             $scope.transaction.confirmationTime = moment().format('MMMM Do YYYY, h:mm:ss A');
             // Handle the success state in the UI
             $scope.transactionSent = true;
             $scope.processing = false;
+
+            // Mixpanel general data
+            var metricsData = {
+              walletID: $rootScope.wallets.current.data.id,
+              enterpriseID: $rootScope.enterprises.current.id,
+              invitation: !!$rootScope.invitation
+            };
+
+            // tx needs approval
+            if (res.status === "pendingApproval") {
+
+              metricsData.requiresApproval = true;
+              // Track successful send
+              AnalyticsProxy.track('SendTx', metricsData);
+
+              // Set local data
+              $scope.returnedTransaction.approvalMessage = res.error;
+              $scope.returnedTransaction.needsApproval = true;
+              return WalletsAPI.getAllWallets();
+            }
+
+            // transaction sent success
+            var hash = res.hash;
+
+            metricsData.requiresApproval = false;
 
             // Track successful send
             AnalyticsProxy.track('SendTx', metricsData);
@@ -314,6 +319,9 @@ angular.module('BitGo.Wallet.WalletSendStepsConfirmTxDirective', [])
             return syncCurrentWallet();
           })
           .catch(function(error) {
+            if (error.message) {
+              error.error = error.message;
+            }
             handleTxSendError(error);
           });
         };

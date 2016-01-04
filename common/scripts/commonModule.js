@@ -14,6 +14,8 @@ angular.module('BitGo.Common', [
   'BitGo.Common.BGActivityTilePolicyDescriptionDirective',
   'BitGo.Common.BGAddUserToWalletDirective',
   'BitGo.Common.BGApprovalsFilter',
+  'BitGo.Common.BGApprovalTileEnterpriseRequestDirective',
+  'BitGo.Common.BGApprovalTileInvitation',
   'BitGo.Common.BGApprovalTilePolicyRequestDirective',
   'BitGo.Common.BGApprovalTileTxRequestDirective',
   'BitGo.Common.BGBitcoinFormatFilter',
@@ -21,6 +23,8 @@ angular.module('BitGo.Common', [
   'BitGo.Common.BGCapitalizeFilter',
   'BitGo.Common.BGCenterEllipsisFilter',
   'BitGo.Common.BGConfirmActionDirective',
+  'BitGo.Common.BGCreditCardForm',
+  'BitGo.Common.BGDecimalFormatFilter',
   'BitGo.Common.BGDynamicTableRowManagerDirective',
   'BitGo.Common.BGEnterpriseOrderingFilter',
   'BitGo.Common.BGEnterpriseWalletsByUser',
@@ -41,6 +45,7 @@ angular.module('BitGo.Common', [
   'BitGo.Common.BGJsonDecryptDirective',
   'BitGo.Common.BGListActiveTileManagerDirective',
   'BitGo.Common.BGOrderObjectsByFilter',
+  'BitGo.Common.BGOtpDevicesDirective',
   'BitGo.Common.BGPasswordStrength',
   'BitGo.Common.BGPermissionsRoleConversionFilter',
   'BitGo.Common.BGPolicyIdStringConversionFilter',
@@ -52,5 +57,9 @@ angular.module('BitGo.Common', [
   'BitGo.Common.BGWalletPermissionsDirective',
   'BitGo.Common.BGWalletSharesByWalletFilter',
   'BitGo.Common.BGWalletsByRoleFilter',
-  'BitGo.Common.BGWalletSharesByWalletFilter'
+  'BitGo.Common.BGWalletSharesByWalletFilter',
+  'BitGo.Common.SSDropDownDirective',
+
+  // Dependencies
+  'BitGo.API.SDK'
 ]);

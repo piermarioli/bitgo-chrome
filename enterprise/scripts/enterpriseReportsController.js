@@ -4,8 +4,8 @@
 */
 angular.module('BitGo.Enterprise.EnterpriseReportsController', [])
 
-.controller('EnterpriseReportsController', ['$scope', '$rootScope', 'NotifyService', 'InternalStateService', 'BG_DEV', 'AnalyticsProxy',
-  function($scope, $rootScope, Notify, InternalStateService, BG_DEV, AnalyticsProxy) {
+.controller('EnterpriseReportsController', ['$scope', '$rootScope', 'NotifyService', 'InternalStateService', 'BG_DEV', 'AnalyticsProxy', '$location',
+  function($scope, $rootScope, Notify, InternalStateService, BG_DEV, AnalyticsProxy, $location) {
     // The view viewStates within the enterprise reports section
     $scope.viewStates = ['monthly', 'daily', 'csv', 'upsell'];
     // The current view section
@@ -25,13 +25,13 @@ angular.module('BitGo.Enterprise.EnterpriseReportsController', [])
     };
 
     /**
-    * Take the user to their account settings - plans page
+    * Take the user to the create org page
     *
     * @public
     */
-    $scope.goToPlans = function() {
+    $scope.goToCreateOrg = function() {
       AnalyticsProxy.track('clickUpsell', { type: 'reports' });
-      InternalStateService.goTo('personal_settings:plans');
+      $location.path('/create-organization');
     };
 
     // Return list of wallets sorted by name

@@ -1,7 +1,7 @@
 {
   "name": "BitGo",
   "description": "BitGo Wallet",
-  "version": "1.2.0",
+  "version": "1.7.0",
   "manifest_version": 2,
   "app": {
     "background": {

@@ -1,10 +1,7 @@
 angular.module('BitGo.API.MarketDataAPI', ['ngResource'])
 
-.factory('MarketDataAPI', ['$resource', '$http', '$rootScope', 'BG_DEV', 'UtilityService', 'CacheService',
-  function($resource, $http, $rootScope, BG_DEV, Utils, CacheService) {
-    var kApiServer = Utils.API.apiServer;
-    var PromiseSuccessHelper = Utils.API.promiseSuccessHelper;
-    var PromiseErrorHelper = Utils.API.promiseErrorHelper;
+.factory('MarketDataAPI', ['$http', '$rootScope', 'BG_DEV', 'UtilityService', 'CacheService', 'SDK',
+  function($http, $rootScope, BG_DEV, Utils, CacheService, SDK) {
     var validators = Utils.Validators;
 
     var currencyCache = new CacheService.Cache('localStorage', 'Currency', 60 * 60 * 1000);
@@ -17,6 +14,8 @@ angular.module('BitGo.API.MarketDataAPI', ['ngResource'])
       "USD": "$",   // US dollar
       "ZAR": "R"    // South African Rand
     };
+    // Flag to check if market data is available throughout the app
+    $rootScope.marketDataAvailable = true;
 
     // Listen for when the root user is set on the app,
     // update the app's currency to reflect their settings
@@ -52,41 +51,29 @@ angular.module('BitGo.API.MarketDataAPI', ['ngResource'])
 
     // Blockchain Data Setters
     function setMarketCapData() {
-      try {
-        var cap = $rootScope.currency.data.current.last * $rootScope.blockchainData.blockchain.totalbc;
-        $rootScope.blockchainData.marketcap = cap;
-      } catch(error) {
-        console.log('Error setting market cap data', error);
-      }
+      var cap = $rootScope.currency.data.current.last * $rootScope.blockchainData.blockchain.totalbc;
+      $rootScope.blockchainData.marketcap = cap;
     }
 
     function setBlockchainData() {
-      try {
-        $rootScope.blockchainData = {
-          blockchain: currencyCache.storage.get('blockchain'),
-          updateTime: currencyCache.storage.get('updateTime')
-        };
-      } catch(error) {
-        console.log('Error setting blockchain data', error);
-      }
+      $rootScope.blockchainData = {
+        blockchain: currencyCache.storage.get('blockchain'),
+        updateTime: currencyCache.storage.get('updateTime')
+      };
     }
 
     // Financial Data Setter
     function setFinancialData() {
       var currency = getAppCurrency();
-      try {
-        $rootScope.currency = {
-          currency: currency,
-          bitcoinUnit: getBitcoinUnit(),
-          symbol: symbolMap[currency],
-          data: {
-            current: currencyCache.get('current')[currency],
-            previous: currencyCache.get('previous')[currency]
-          }
-        };
-      } catch(error) {
-        console.log('Error setting app financial data', error);
-      }
+      $rootScope.currency = {
+        currency: currency,
+        bitcoinUnit: getBitcoinUnit(),
+        symbol: symbolMap[currency],
+        data: {
+          current: currencyCache.get('current')[currency],
+          previous: currencyCache.get('previous')[currency]
+        }
+      };
     }
 
     // bitcoinUnit setter/getter
@@ -116,10 +103,16 @@ angular.module('BitGo.API.MarketDataAPI', ['ngResource'])
       }
       currencyCache.add('currency', currency);
       // update the app's financial data with the new currency
-      setFinancialData();
-      setBlockchainData();
-      setMarketCapData();
-      $rootScope.$emit('MarketDataAPI.AppCurrencyUpdated', $rootScope.currency);
+      try {
+        setFinancialData();
+        setBlockchainData();
+        setMarketCapData();
+        $rootScope.marketDataAvailable = true;
+        $rootScope.$emit('MarketDataAPI.AppCurrencyUpdated', $rootScope.currency);
+      } catch(error) {
+        console.log("error setting market data" + error);
+        $rootScope.marketDataAvailable = false;
+      }
     }
 
     // CurrencyCache Setter
@@ -159,19 +152,17 @@ angular.module('BitGo.API.MarketDataAPI', ['ngResource'])
 
     return {
       latest: function() {
-        var resource = $resource(kApiServer + "/market/latest", {});
-        return resource.get({}).$promise
-        .then(
-          function(result) {
-            if (!_.isEmpty(result.latest.currencies)) {
-              var currency = getAppCurrency();
-              setCurrencyCache(result);
-              setInAppMarketData(currency);
-              return $rootScope.currency;
-            }
-          },
-          PromiseErrorHelper()
-        );
+        return SDK.wrap(
+          SDK.get().market()
+        )
+        .then(function(result) {
+          if (!_.isEmpty(result.latest.currencies)) {
+            var currency = getAppCurrency();
+            setCurrencyCache(result);
+            setInAppMarketData(currency);
+            return $rootScope.currency;
+          }
+        });
       },
       /**
        * Gets price of Bitcoin for a given currency and range
@@ -187,26 +178,24 @@ angular.module('BitGo.API.MarketDataAPI', ['ngResource'])
         else if (!currency){
           throw new Error('Need currency when getting market data');
         }
-        var resource = $resource(kApiServer + "/market/last/:range/:currency", {range: range, currency: currency});
-        return resource.query({}).$promise
-        .then(
-          function(results) {
-            var prices = [];
-            var max = 0;
-            var min = results[0][1];
-            results.forEach(function(result) {
-              prices.push({x: new Date(result[0] * 1000), y: result[1]});
-              if (result[1] > max){
-                max = result[1];
-              }
-              else if (min > result[1]){
-                min = result[1];
-              }
-            });
-            return {prices: prices, max: max, min: min};
-          },
-          PromiseErrorHelper()
-        );
+        return SDK.wrap(
+          SDK.doGet('/market/last/' + range + '/' + currency)
+        )
+        .then(function(results) {
+          var prices = [];
+          var max = 0;
+          var min = results[0][1];
+          results.forEach(function(result) {
+            prices.push({x: new Date(result[0] * 1000), y: result[1]});
+            if (result[1] > max){
+              max = result[1];
+            }
+            else if (min > result[1]){
+              min = result[1];
+            }
+          });
+          return {prices: prices, max: max, min: min};
+        });
       }
     };
   }

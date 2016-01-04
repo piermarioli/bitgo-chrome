@@ -10,8 +10,8 @@
 
 angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', [])
 
-.directive('modalOtpPasswordForm', ['$rootScope', 'UtilityService', 'UserAPI', 'NotifyService', 'BG_DEV', 'KeychainsAPI', '$q', 'WalletsAPI', '$location', '$timeout', 'CacheService',
-  function($rootScope, Util, UserAPI, NotifyService, BG_DEV, KeychainsAPI, $q, WalletsAPI, $location, $timeout, CacheService) {
+.directive('modalOtpPasswordForm', ['$rootScope', 'UtilityService', 'UserAPI', 'NotifyService', 'BG_DEV', 'KeychainsAPI', '$q', 'WalletsAPI', '$location', '$timeout', 'CacheService', 'SDK',
+  function($rootScope, Util, UserAPI, NotifyService, BG_DEV, KeychainsAPI, $q, WalletsAPI, $location, $timeout, CacheService, SDK) {
     return {
       restrict: 'A',
       require: '^ModalController',
@@ -32,6 +32,8 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', [])
         $scope.unlockTimeRemaining = 0;
         // unlock time to be displayed on the modal (with the countdown)
         $scope.prettyUnlockTime = "2-step verification unlocked";
+        // flag to indicate if a user has an otp device set
+        $scope.otpDeviceSet = !!$scope.user.settings.otpDevices.length;
 
         /**
          * Validate the password field of the form;
@@ -48,6 +50,9 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', [])
          */
         function otpIsValid() {
           if ($scope.userUnlocked) {
+            return true;
+          }
+          if (!$scope.otpDeviceSet) {
             return true;
           }
           return Util.Validators.otpOk($scope.form.otp);
@@ -83,7 +88,7 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', [])
         }
 
         /**
-         * Function for counting down the unlock time. Sets the display variable on the scope for the UI 
+         * Function for counting down the unlock time. Sets the display variable on the scope for the UI
          */
         function onTimeout() {
           $scope.unlockTimeRemaining--;
@@ -98,10 +103,10 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', [])
         }
 
         /**
-         * Starts the countdown  
+         * Starts the countdown
          */
         function startTimeout() {
-          if ($scope.userUnlocked) {
+          if ($scope.userUnlocked && $scope.otpDeviceSet) {
             if (unlockTimeCache.get('time')) {
               var endUnlockTime = new Date(unlockTimeCache.get('time'));
               var currentTime = new Date();
@@ -123,7 +128,7 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', [])
           try {
             // Check if the keychain is present. If not, it is a cold wallet
             if (keychain.encryptedXprv){
-              var privKey = Util.Crypto.sjclDecrypt(password, keychain.encryptedXprv);
+              var privKey = SDK.decrypt(password, keychain.encryptedXprv);
               return { key: privKey };
             }
             return true;
@@ -140,7 +145,7 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', [])
          */
         function decryptUserPrivKey(password, wallet) {
           try {
-            var privKey = Util.Crypto.sjclDecrypt(password, wallet.data.private.userPrivKey);
+            var privKey = SDK.decrypt(password, wallet.data.private.userPrivKey);
             return { key: privKey };
           } catch (e) {
             return undefined;
@@ -209,7 +214,12 @@ angular.module('BitGo.Modals.ModalOtpPasswordFormDirective', [])
          */
         $scope.forgotPassword = function () {
           $scope.closeWithError('cancel');
-          $location.path('/enterprise/' + $rootScope.enterprises.current.id + '/wallets/' + $rootScope.wallets.current.data.id + '/recover');
+          if ($scope.isAcceptingShare) {
+            $location.path('/forgotpassword');
+          } else {
+            $location.path('/enterprise/' + $rootScope.enterprises.current.id +
+                '/wallets/' + $rootScope.wallets.current.data.id + '/recover');
+          }
         };
 
         /**

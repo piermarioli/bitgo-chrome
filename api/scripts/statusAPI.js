@@ -4,24 +4,19 @@
  * @description
  * Manages the http requests dealing with server status/availability
  */
+/* istanbul ignore next */
 angular.module('BitGo.API.StatusAPI', [])
 
-.factory('StatusAPI', ['$resource', 'UtilityService',
-  function($resource, UtilityService) {
-    var kApiServer = UtilityService.API.apiServer;
-    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
-    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+.factory('StatusAPI', ['SDK',
+  function(SDK) {
 
     /**
     * Check BitGo service status
     * @private
     */
     function ping() {
-      var resource = $resource(kApiServer + '/ping', {});
-      return new resource.get({}).$promise
-      .then(
-        PromiseSuccessHelper(),
-        PromiseErrorHelper()
+      return SDK.wrap(
+        SDK.get().ping()
       );
     }
 

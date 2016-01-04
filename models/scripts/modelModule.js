@@ -3,6 +3,7 @@ angular.module('BitGo.Model', [
   'BitGo.Models.EnterpriseModel',
   'BitGo.Models.UserModel',
   'BitGo.Models.WalletModel',
+  'BitGo.Models.MatchwalletModel',
   //dependencies for this module
   'BitGo.Utility'
 ]);
