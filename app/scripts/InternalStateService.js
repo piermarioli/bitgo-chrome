@@ -39,12 +39,7 @@ angular.module('BitGo.App.InternalStateService', [])
           return '/settings';
         }
       },
-      'personal_settings:security': {
-        path: function() {
-          return '/settings';
-        }
-      },
-      'personal_settings:subscriptions': {
+      'personal_settings:plans': {
         path: function() {
           return '/settings';
         }

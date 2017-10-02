@@ -3,8 +3,8 @@ angular.module('BitGo.Settings.PasswordFormDirective', [])
 /**
  * Directive to manage the settings password form
  */
-.directive('settingsPwForm', ['$rootScope', 'UserAPI', 'UtilityService', 'NotifyService', 'RequiredActionService', 'BG_DEV', 'SDK',
-  function($rootScope, UserAPI, Util, Notify, RequiredActionService, BG_DEV, SDK) {
+.directive('settingsPwForm', ['$rootScope', 'UserAPI', 'UtilityService', 'NotifyService', 'RequiredActionService', 'BG_DEV',
+  function($rootScope, UserAPI, Util, Notify, RequiredActionService, BG_DEV) {
     return {
       restrict: 'A',
       require: '^SettingsController',
@@ -55,7 +55,6 @@ angular.module('BitGo.Settings.PasswordFormDirective', [])
         };
 
         function resetForm() {
-          $scope.formError = null;
           $scope.settings.local.newPassword = null;
           $scope.settings.local.newPasswordConfirm = null;
           $scope.settings.local.oldPassword = null;
@@ -84,7 +83,6 @@ angular.module('BitGo.Settings.PasswordFormDirective', [])
           }
           // Reset the form
           resetForm();
-          return Notify.success('Your password has been successfully updated');
         }
 
         // Function to verify if the passcode the user put in is valid
@@ -95,7 +93,7 @@ angular.module('BitGo.Settings.PasswordFormDirective', [])
         // Decrypt a keychain private key
         function decryptXprv(encryptedXprv, passcode) {
           try {
-            var xprv = SDK.decrypt(passcode, encryptedXprv);
+            var xprv = Util.Crypto.sjclDecrypt(passcode, encryptedXprv);
             return xprv;
           } catch (e) {
             return undefined;
@@ -111,7 +109,7 @@ angular.module('BitGo.Settings.PasswordFormDirective', [])
             var xprv = decryptXprv(encryptedXprv, oldRawPassword);
             if (xprv) {
               // reencrypt with newpassword
-              newKeychains[xpub] = SDK.encrypt(newRawPassword, xprv);
+              newKeychains[xpub] = Util.Crypto.sjclEncrypt(newRawPassword, xprv);
             } else {
               // since we can't decrypt this, leave it untouched
               newKeychains[xpub] = encryptedXprv;
@@ -121,13 +119,15 @@ angular.module('BitGo.Settings.PasswordFormDirective', [])
         }
 
         $scope.savePw = function() {
+          // clear any errors
+          $scope.clearFormError();
           if (formIsValid()) {
             var oldRawPassword = $scope.settings.local.oldPassword;
             var newRawPassword = $scope.settings.local.newPassword;
-            var oldPassword = SDK.passwordHMAC($scope.settings.username, oldRawPassword);
-            var newPassword = SDK.passwordHMAC($scope.settings.username, newRawPassword);
+            var oldPassword = Util.Crypto.sjclHmac($scope.settings.username, oldRawPassword);
+            var newPassword = Util.Crypto.sjclHmac($scope.settings.username, newRawPassword);
 
-            checkPasscode(oldRawPassword)
+            checkPasscode(oldPassword)
             .then(function() {
               return UserAPI.getUserEncryptedData();
             })
@@ -164,7 +164,6 @@ angular.module('BitGo.Settings.PasswordFormDirective', [])
           if (RequiredActionService.hasAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW)) {
             $scope.showWeakPasswordWarning = true;
           }
-          $scope.formError = null;
         }
         init();
 

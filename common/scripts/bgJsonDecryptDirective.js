@@ -8,8 +8,8 @@
  */
 angular.module('BitGo.Common.BGJsonDecryptDirective', [])
 
-.directive('bgJsonDecrypt', ['$parse', '$timeout', 'SDK',
-  function($parse, $timeout, SDK) {
+.directive('bgJsonDecrypt', ['$parse', '$timeout', 'UtilityService',
+  function($parse, $timeout, UtilityService) {
     return {
       restrict: 'A',
       require: '^ngModel',
@@ -28,7 +28,8 @@ angular.module('BitGo.Common.BGJsonDecryptDirective', [])
         */
         function decryptJSON() {
           try {
-            return SDK.decrypt(scope.recoveryInfo.passcodeEncryptionCode, json);
+            var unencryptedPasscode = UtilityService.Crypto.sjclDecrypt(scope.recoveryInfo.passcodeEncryptionCode, json);
+            return unencryptedPasscode;
           } catch (e) {
             return undefined;
           }

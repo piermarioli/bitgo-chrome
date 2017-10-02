@@ -3,8 +3,8 @@ angular.module('BitGo.Common.BGInputValidator', [])
 /**
  * Helps with determining state of the input
  */
-.directive('bgInputValidator', ['SDK',
-  function(SDK) {
+.directive('bgInputValidator', [
+  function() {
     return {
       restrict: 'A',
       require: '^ngModel',
@@ -18,7 +18,7 @@ angular.module('BitGo.Common.BGInputValidator', [])
         // validate if an input is a valid BIP32 xpub
         function xpubValid(xpub) {
           try {
-            console.assert(!SDK.bitcoin.HDNode.fromBase58(xpub).privKey);
+            new Bitcoin.BIP32(xpub);
           } catch(error) {
             return false;
           }
@@ -55,9 +55,6 @@ angular.module('BitGo.Common.BGInputValidator', [])
               break;
             case 'xpub':
               modelInvalid = !xpubValid(ngModel.$viewValue);
-              break;
-            case 'custom':
-              modelInvalid = !attrs.custom(ngModel.$viewValue);
               break;
           }
           var visibleError = modelInvalid && ngModel.$dirty && !ngModel.focused;

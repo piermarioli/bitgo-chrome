@@ -10,10 +10,11 @@
         <div class="col col--noPadding">
           <nav>
             <ul class="sectionNav">
-              <li class="sectionNav-item"><a ng-click="setState('profile')" class="sectionNav-link" ng-class="{ 'is-selected': showState('profile') }">Profile</a></li>
-              <li class="sectionNav-item"><a ng-click="setState('security')" class="sectionNav-link" ng-class="{ 'is-selected': showState('security') }">Security</a></li>
-              <li class="sectionNav-item"><a ng-click="setState('preferences')" class="sectionNav-link" ng-class="{ 'is-selected': showState('preferences') }">Preferences</a></li>
-              <li class="sectionNav-item"><a ng-click="setState('api_access')" class="sectionNav-link" ng-class="{ 'is-selected': showState('api_access') }">API Access</a></li>
+              <li class="sectionNav-item"><a ng-click = "setState('about')" class="sectionNav-link" ng-class="{ 'is-selected': showState('about') }">About Me</a></li>
+              <li class="sectionNav-item"><a ng-click = "setState('password')" class="sectionNav-link" ng-class="{ 'is-selected': showState('password') }">Password</a></li>
+              <li class="sectionNav-item"><a ng-click = "setState('preferences')" class="sectionNav-link" ng-class="{ 'is-selected': showState('preferences') }">Preferences</a></li>
+              <li ng-hide="currentUser.isEnterpriseCustomer()" class="sectionNav-item"><a ng-click = "setState('plans')" class="sectionNav-link" ng-class="{ 'is-selected': showState('plans') }">Plans</a></li>
+              <li class="sectionNav-item"><a ng-click = "setState('developers')" class="sectionNav-link" ng-class="{ 'is-selected': showState('developers') }">Developers</a></li>
             </ul>
           </nav>
         </div>
@@ -21,6 +22,20 @@
     </div>
   </section>
   <main class="mainContent contentWrapper">
-    <ng-include src="settingsStateTemplateSource"></ng-include>
+    <div ng-show="showState('about')">
+      <ng-include src="'settings/templates/about.html'"></ng-include>
+    </div>
+    <div ng-show="showState('password')">
+      <ng-include src="'settings/templates/password.html'"></ng-include>
+    </div>
+    <div ng-show="showState('preferences')">
+      <ng-include src="'settings/templates/preferences.html'"></ng-include>
+    </div>
+    <div ng-show="showState('plans')">
+      <ng-include src="'settings/templates/plans.html'"></ng-include>
+    </div>
+    <div ng-show="showState('developers')">
+      <ng-include src="'settings/templates/developers.html'"></ng-include>
+    </div>
   </main>
 </div>

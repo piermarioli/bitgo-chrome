@@ -8,8 +8,8 @@
  */
 angular.module('BitGo.Wallet.WalletAddUserFormDirective', [])
 
-.directive('walletAddUserForm', ['$rootScope', '$q', 'UserAPI', 'NotifyService', 'KeychainsAPI', 'UtilityService', '$modal', 'WalletSharesAPI', '$filter', 'BG_DEV', 'InternalStateService', 'AnalyticsProxy', '$location',
-  function($rootScope, $q, UserAPI, Notify, KeychainsAPI, UtilityService, $modal, WalletSharesAPI, $filter, BG_DEV, InternalStateService, AnalyticsProxy, $location) {
+.directive('walletAddUserForm', ['$rootScope', '$q', 'UserAPI', 'NotifyService', 'KeychainsAPI', 'UtilityService', '$modal', 'WalletSharesAPI', '$filter', 'BG_DEV', 'InternalStateService', 'AnalyticsProxy',
+  function($rootScope, $q, UserAPI, Notify, KeychainsAPI, UtilityService, $modal, WalletSharesAPI, $filter, BG_DEV, InternalStateService, AnalyticsProxy) {
     return {
       restrict: 'A',
       controller: ['$scope', function($scope) {
@@ -84,13 +84,13 @@ angular.module('BitGo.Wallet.WalletAddUserFormDirective', [])
         };
 
         /**
-        * Take the user to the create organization page
+        * Take the user to their account settings - plans page
         *
         * @public
         */
-        scope.goToCreateOrg = function() {
+        scope.goToPlans = function() {
           AnalyticsProxy.track('clickUpsell', { type: 'addPremiumUser' });
-          $location.path('/create-organization');
+          InternalStateService.goTo('personal_settings:plans');
         };
 
         // Listen for the selected role to change, and if this role is

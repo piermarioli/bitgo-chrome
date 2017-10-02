@@ -3,14 +3,16 @@
   - Parent controller comes from the walletSendStepsPrepareTx directive
  */
 angular.module('BitGo.Wallet.WalletSendStepsTypeahead', [])
-.directive('walletSendStepsTypeahead', ['$q', '$rootScope', 'LabelsAPI', 'WalletsAPI', 'SDK',
-  function($q, $rootScope, LabelsAPI, WalletsAPI, SDK) {
+
+.directive('walletSendStepsTypeahead', ['$q', '$rootScope', 'LabelsAPI', 'WalletsAPI',
+  function($q, $rootScope, LabelsAPI, WalletsAPI) {
     return {
       restrict: 'A',
       require: '^walletSendStepsPrepareTx',  // explicitly require
       controller: ['$scope', function($scope) {
         // Timer to handle multiple events fired from the typeahead
         var timeout;
+
         // the view model for the dropdown wallet typeahead
         $scope.recipientViewValue = null;
         // the list of wallets expected in the typeahead's dropdown
@@ -90,16 +92,15 @@ angular.module('BitGo.Wallet.WalletSendStepsTypeahead', [])
               address = $scope.transaction.recipientAddress;
             }
             // If the recipient is valid, set the address on the transaction object
-            // If we are using an alt-coin we are going to delegate the address validation to Shapeshift
-            $scope.recipientInvalid =  $scope.transaction.altCoin.useAltCoin === true ? false : !SDK.get().verifyAddress({ address: address });
+            $scope.recipientInvalid = !Bitcoin.Address.validate(address);
             if (!$scope.recipientInvalid) {
               // if the user pasted in a valid address that has an existing label
               // set it in the label field manually so they know it's already labeled
               if (manuallyEntered) {
                 setLabelFromManuallyEnteredAddress(address);
               }
+              $scope.transaction.recipientAddress = address;
             }
-            $scope.transaction.recipientAddress = address;
             $scope.$apply();
           }, 100);
         };

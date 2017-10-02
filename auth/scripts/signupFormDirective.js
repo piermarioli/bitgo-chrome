@@ -3,13 +3,12 @@ angular.module('BitGo.Auth.SignupFormDirective', [])
 /**
  * Directive to manage the signup form
  */
-.directive('signupForm', ['$rootScope', '$timeout', '$location', '$routeParams', 'UserAPI', 'UtilityService',  'NotifyService', 'BG_DEV',  'AnalyticsProxy', 'AnalyticsUtilities', 'SDK',
-  function($rootScope, $timeout, $location, $routeParams, UserAPI, Util, Notify, BG_DEV, AnalyticsProxy, AnalyticsUtilities, SDK) {
+.directive('signupForm', ['$rootScope', '$timeout', 'UserAPI', 'UtilityService',  'NotifyService', 'BG_DEV',  'AnalyticsProxy', 'AnalyticsUtilities',
+  function($rootScope, $timeout, UserAPI, Util, Notify, BG_DEV, AnalyticsProxy, AnalyticsUtilities) {
     return {
       restrict: 'A',
       require: '^SignupController',
       controller: ['$scope', function($scope) {
-
         // Instance used to track how long it takes a user to enter a valid pw
         var analyticsPasswordMonitor;
 
@@ -133,17 +132,7 @@ angular.module('BitGo.Auth.SignupFormDirective', [])
          * @private
          */
         function signupSuccess(user) {
-          if (!$routeParams.email || $routeParams.email != $scope.lockedEmail) {
-            return $scope.$emit('SetState', 'confirmEmail');
-          }
-          UserAPI.login({
-            email: user.username,
-            password: $scope.lockedPassword
-          })
-          .then(function() {
-            $location.search('setOtpDevice', '1');
-            $location.path('/login');
-          });
+          return $scope.$emit('SetState', 'confirmEmail');
         }
 
         /**
@@ -177,17 +166,8 @@ angular.module('BitGo.Auth.SignupFormDirective', [])
             var formattedEmail = Util.Formatters.email($scope.lockedEmail);
             var newUser = {
               email: formattedEmail,
-              password: SDK.passwordHMAC(formattedEmail, $scope.lockedPassword)
+              password: Util.Crypto.sjclHmac(formattedEmail, $scope.lockedPassword)
             };
-            if (typeof($routeParams.token) !== 'undefined') {
-              newUser.token = $routeParams.token;
-            }
-            // if there's a referral going on and the utm source and campaign aren't empty, we wanna forward that
-            if ($routeParams.utm_medium === 'referral' && $routeParams.utm_source && $routeParams.utm_campaign) {
-              newUser.utm_campaign = $routeParams.utm_campaign;
-              newUser.utm_source = $routeParams.utm_source;
-            }
-
             UserAPI.signup(newUser)
             .then(signupSuccess)
             .catch(signupFail);
@@ -197,9 +177,6 @@ angular.module('BitGo.Auth.SignupFormDirective', [])
         function init() {
           // init an instance of the password time-to-complete tracker
           analyticsPasswordMonitor = new AnalyticsUtilities.time.PasswordCompletionMonitor();
-          if ($routeParams.email) {
-            $scope.user.settings.email.email = $routeParams.email;
-          }
         }
         init();
 

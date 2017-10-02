@@ -21,7 +21,7 @@ angular.module('BitGo.Enterprise.MarketWidgetDirective', [])
         };
 
         // sets and updates $scope.currency data on the isolate scope
-        function setScope(currencyData, marketDataAvailable){
+        function setScope(currencyData){
           // check if currency data is received first
           if (currencyData && currencyData.data && currencyData.data.current) {
             // restrict the price to 2 decimal values
@@ -35,24 +35,15 @@ angular.module('BitGo.Enterprise.MarketWidgetDirective', [])
               $scope.direction = "down";
             }
             currencyData.data.current.last = parseFloat(currencyData.data.current.last).toFixed(2);
-            currencyData.data.current.prevDayHigh = parseFloat(currencyData.data.current.prevDayHigh).toFixed(2);
-            currencyData.data.current.prevDayLow = parseFloat(currencyData.data.current.prevDayLow).toFixed(2);
             $scope.currency = currencyData;
-            $scope.marketDataAvailable = marketDataAvailable;
           }
         }
-        setScope($rootScope.currency, $rootScope.marketDataAvailable);
+        setScope($rootScope.currency);
 
         //initialize chartTime to one day
         $scope.chartTime = 'months';
-        var killCurrencyUpdated = $rootScope.$on('MarketDataAPI.AppCurrencyUpdated', function(event, currencyData) {
-          setScope(currencyData, $rootScope.marketDataAvailable);
-        });
-
-        // Clean up the listeners -- helps decrease run loop time and
-        // reduce liklihood of references being kept on the scope
-        $scope.$on('$destroy', function() {
-          killCurrencyUpdated();
+        $rootScope.$on('MarketDataAPI.AppCurrencyUpdated', function(event, currencyData) {
+          setScope(currencyData);
         });
 
         $scope.setTime = function(time) {

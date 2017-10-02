@@ -8,8 +8,8 @@
  */
 angular.module('BitGo.Wallet.WalletTransactionsManagerDirective', [])
 
-.directive('walletTransactionsManager', ['$q', '$timeout', '$rootScope', '$location', 'NotifyService', 'CacheService', 'UtilityService', 'TransactionsAPI', 'InfiniteScrollService', 'WalletsAPI', 'AnalyticsProxy',
-  function($q, $timeout, $rootScope, $location, NotifyService, CacheService, UtilityService, TransactionsAPI, InfiniteScrollService, WalletsAPI, AnalyticsProxy) {
+.directive('walletTransactionsManager', ['$q', '$timeout', '$rootScope', '$location', 'NotifyService', 'CacheService', 'UtilityService', 'TransactionsAPI', 'InfiniteScrollService', 'WalletsAPI',
+  function($q, $timeout, $rootScope, $location, NotifyService, CacheService, UtilityService, TransactionsAPI, InfiniteScrollService, WalletsAPI) {
     return {
       restrict: 'A',
       require: '^WalletController',
@@ -267,7 +267,7 @@ angular.module('BitGo.Wallet.WalletTransactionsManagerDirective', [])
 
         function init() {
           $rootScope.setContext('walletTransactions');
-          AnalyticsProxy.track('WalletTransactionsEntered');
+
           // initialize locals
           limit = 25;
           syncCounter = 0;

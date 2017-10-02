@@ -6,5 +6,8 @@
 */
 angular.module('BitGo.Interceptors', [
   // Modules for BitGo.Interceptors composition
-  'BitGo.Interceptors.BrowserInterceptor'
+  'BitGo.Interceptors.AuthTokenInterceptor',
+  'BitGo.Interceptors.VerificationInterceptor',
+  'BitGo.Interceptors.BrowserInterceptor',
+  'BitGo.Interceptors.NetworkBusyInterceptor'
 ]);

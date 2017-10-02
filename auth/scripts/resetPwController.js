@@ -1,7 +1,7 @@
 angular.module('BitGo.Auth.ResetPwController', [])
 
-.controller('ResetPwController', ['$scope', '$rootScope', '$location', 'NotifyService', 'UtilityService', 'UserAPI', 'BG_DEV', 'SDK',
-  function($scope, $rootScope, $location, NotifyService, UtilityService, UserAPI, BG_DEV, SDK) {
+.controller('ResetPwController', ['$scope', '$rootScope', '$location', 'NotifyService', 'UtilityService', 'UserAPI', 'BG_DEV',
+  function($scope, $rootScope, $location, NotifyService, UtilityService, UserAPI, BG_DEV) {
 
     // Holds params relevant to resetting the user pw
     var resetParams;
@@ -73,7 +73,7 @@ angular.module('BitGo.Auth.ResetPwController', [])
           code: resetParams.code,
           email: resetParams.email,
           type: 'forgotpassword',
-          password: SDK.passwordHMAC(resetParams.email, $scope.form.password)
+          password: UtilityService.Crypto.sjclHmac(resetParams.email, $scope.form.password)
         };
 
         UserAPI.resetPassword(params)

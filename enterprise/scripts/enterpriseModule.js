@@ -8,7 +8,6 @@ angular.module('BitGo.Enterprise', [
   // Wallets Section
   'BitGo.Enterprise.EnterpriseWalletsController',
   'BitGo.Enterprise.MarketWidgetDirective',
-  'BitGo.Enterprise.MatchwalletWidgetDirective',
   // Activity Section
   'BitGo.Enterprise.EnterpriseActivityController',
   'BitGo.Enterprise.ActivityAuditLogDirective',
@@ -17,16 +16,11 @@ angular.module('BitGo.Enterprise', [
   'BitGo.Enterprise.EnterpriseApprovalTileDirective',
   // Settings Section
   'BitGo.Enterprise.EnterpriseSettingsController',
-  'BitGo.Enterprise.EnterpriseSettingsCompanyDirective',
-  'BitGo.Enterprise.EnterpriseSettingsSupportDirective',
-  'BitGo.Enterprise.EnterpriseSettingsBillingDirective',
+  'BitGo.Enterprise.PersonalSettingsController',
+  'BitGo.Enterprise.SettingsUsersManagerDirective',
+  'BitGo.Enterprise.SettingsAddUserFormDirective',
   // Reports Section
   'BitGo.Enterprise.EnterpriseReportsController',
   'BitGo.Enterprise.MonthlyReportsDirective',
-  'BitGo.Enterprise.CSVReportsDirective',
-  // Create section
-  'BitGo.Enterprise.EnterpriseCreateController',
-  'BitGo.Enterprise.EnterpriseCreateStepsLabelDirective',
-  'BitGo.Enterprise.EnterpriseCreateStepsSupportDirective',
-  'BitGo.Enterprise.EnterpriseCreateStepsBillingDirective'
+  'BitGo.Enterprise.CSVReportsDirective'
 ]);

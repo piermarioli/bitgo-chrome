@@ -15,7 +15,7 @@ angular.module('BitGo.Auth.LoginController', [])
 
 .controller('LoginController', ['$scope', '$rootScope', '$location', 'UserAPI', 'UtilityService', 'KeychainsAPI', 'SettingsAPI', 'NotifyService', 'PostAuthService', 'EnterpriseAPI', 'RequiredActionService', 'BG_DEV', 'CacheService',
   function($scope, $rootScope, $location, UserAPI, Util, KeychainsAPI, SettingsAPI, Notify, PostAuthService, EnterpriseAPI, RequiredActionService, BG_DEV, CacheService) {
-    $scope.viewStates = ['login', 'needsEmailVerify', 'setOtpDevice', 'verifyPhone', 'otp', 'totpSetup', 'terms'];
+    $scope.viewStates = ['login', 'needsEmailVerify', 'setPhone', 'verifyPhone', 'otp'];
 
     // The initial view state; initialized later
     $scope.state = undefined;
@@ -28,11 +28,8 @@ angular.module('BitGo.Auth.LoginController', [])
     // password/email fields in the middle of the login flow
     $scope.lockedPassword = null;
     $scope.lockedEmail = null;
-    $scope.trustMachine = false;
-    // list of enterprises which need to upgrade their service agreement version
-    $scope.enterprisesList = [];
 
-    $scope.setPostauth = function() {
+    var killUserLoginListener = $scope.$on('SignUserIn', function() {
       // Priority 1: run any necessary post auth actions
       if (PostAuthService.hasPostAuth()) {
         return PostAuthService.runPostAuth();
@@ -41,43 +38,16 @@ angular.module('BitGo.Auth.LoginController', [])
       if (RequiredActionService.hasAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW)) {
         return RequiredActionService.runAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW);
       }
-
-      // Priority 3: direct log in    
+      // Priority 3: direct log in
       $location.path('/enterprise/' + EnterpriseAPI.getCurrentEnterprise() + '/wallets');
-    };
-
-    var killUserLoginListener = $scope.$on('SignUserIn', function() {
-      // empty the enterprise list
-      $scope.enterprisesList = [];
-
-      if ($rootScope.currentUser.isEnterpriseCustomer()) {
-        return EnterpriseAPI.getServicesAgreementVersion()
-        .then(function(data) {
-          // check each enterprise the user is on, check the version
-          _.forEach($rootScope.currentUser.settings.enterprises, function(enterprise) {
-            // if the latest version is not present, don't do anything
-            if ($rootScope.enterprises.all[enterprise.id].latestSAVersionSigned === undefined) {
-              return;
-            }
-            if (data.version > $rootScope.enterprises.all[enterprise.id].latestSAVersionSigned) {
-              $scope.enterprisesList.push(enterprise.id);
-            }
-          });
-          // If there is any enterprise which needs to be updated
-          if ($scope.enterprisesList.length > 0) {
-            return $scope.$emit('SetState', 'terms');
-          }
-          $scope.setPostauth();
-        });
-      }
-      $scope.setPostauth();
     });
 
     var killUserSetListener = $rootScope.$on('UserAPI.CurrentUserSet', function(evt, data) {
       // stores settings returned after creating ecdh key for user
       var newSettings;
       $scope.user = $rootScope.currentUser;
-      //check if user has ECDH keychain. If not, make it for her/him
+
+      //check if user has ECDH keychain. If not, make it for him
       if (!$rootScope.currentUser.settings.ecdhKeychain) {
         var params = {
           source: 'ecdh',
@@ -111,15 +81,13 @@ angular.module('BitGo.Auth.LoginController', [])
       // Use the UI locked variables if available
       var safePassword = $scope.lockedPassword || $scope.password;
       var safeEmail = $scope.lockedEmail || $scope.user.settings.email.email;
-
       // Set the params
       var formattedEmail = Util.Formatters.email(safeEmail);
       var user = {
         email: formattedEmail,
         password: safePassword,
         otp: $scope.otpCode,
-        forceSMS: !!forceSMS,
-        trust: $scope.trustMachine
+        forceSMS: !!forceSMS
       };
       return UserAPI.login(user);
     };
@@ -140,7 +108,7 @@ angular.module('BitGo.Auth.LoginController', [])
     };
 
     function getVerificationState() {
-      var verificationStates = ['needsEmailVerify', 'setOtpDevice', 'verifyPhone'];
+      var verificationStates = ['needsEmailVerify', 'setPhone', 'verifyPhone'];
       var result;
       var foundState;
       var urlStates = $location.search();

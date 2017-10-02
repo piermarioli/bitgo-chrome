@@ -4,10 +4,8 @@
 */
 angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
 
-.controller('EnterpriseWalletsController', ['$q', '$scope', '$modal', '$rootScope', 'CacheService', '$location', '$filter', 'WalletsAPI', 'WalletSharesAPI', 'UtilityService', 'NotifyService', 'KeychainsAPI', 'EnterpriseAPI', 'BG_DEV', 'SyncService', 'RequiredActionService', 'AnalyticsProxy', 'InternalStateService', 'SDK',
-  function($q, $scope, $modal, $rootScope, CacheService, $location, $filter, WalletsAPI, WalletSharesAPI, UtilityService, Notify, KeychainsAPI, EnterpriseAPI, BG_DEV, SyncService, RequiredActionService, AnalyticsProxy, InternalStateService, SDK) {
-    // start cache service for create wallet modal
-    var enterpriseCache = new CacheService.Cache('sessionStorage', 'Enterprise', 60 * 60 * 1000);
+.controller('EnterpriseWalletsController', ['$q', '$scope', '$modal', '$rootScope', '$location', '$filter', 'WalletsAPI', 'WalletSharesAPI', 'UtilityService', 'NotifyService', 'KeychainsAPI', 'EnterpriseAPI', 'BG_DEV', 'SyncService', 'RequiredActionService', 'AnalyticsProxy',
+  function($q, $scope, $modal, $rootScope, $location, $filter, WalletsAPI, WalletSharesAPI, UtilityService, Notify, KeychainsAPI, EnterpriseAPI, BG_DEV, SyncService, RequiredActionService, AnalyticsProxy) {
     // show the ui if user has access to any wallets
     $scope.noWalletsAcrossEnterprisesExist = null;
     // show the ui if filtered wallets exist
@@ -21,68 +19,10 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
     // show the ui for no wallet shares existing
     $scope.noWalletSharesExist = null;
 
-    // keeps track of whether we received WalletsAPI.CurrentWalletsSet
-    var receivedUserWalletsSetEvent = false;
-
-    $scope.setTwoStepVerification = function() {
-      InternalStateService.goTo('personal_settings:security');
-    };
-
-    /* istanbul ignore next */
-    $scope.goToCreateOrg = function() {
-      AnalyticsProxy.track('clickUpsell', { type: 'dashboardWidget', invitation: !!$rootScope.invitation });
-      $location.path('/create-organization');
-    };
-
-    /* istanbul ignore next */
-    $scope.redirectReferralLink = function() {
-      AnalyticsProxy.track('clickReferral', { type: 'dashboardWidget', invitation: !!$rootScope.invitation });
-    };
-
-    function isBitfinexReferent(){
-      var referrer = $rootScope.currentUser.settings.referrer;
-      if (referrer && referrer.source && referrer.source.toLowerCase().indexOf(BG_DEV.REFERRER.BITFINEX.toLowerCase()) > -1) {
-        return true;
-      }
-      return false;
-    }
-
-    /* istanbul ignore next */
-    $scope.showReferralWidget = function() {
-      // Check for bitfinex enterpise
-      var isWalletListEmpty = _.isEmpty($rootScope.wallets.all);
-      var isBitfinexEnterprise = $rootScope.enterprises.current && ($rootScope.enterprises.current.id === BG_DEV.ENTERPRISE.BITFINEX_ID);
-      /*
-      Only show the dialog if a) the user has a wallet which b) is not associated with a Bitfinex enterprise and c) the
-      user didn't come to us from or due to a referral by Bitfinex
-       */
-      return !isWalletListEmpty && !isBitfinexEnterprise && !isBitfinexReferent();
-    };
-
-    /* istanbul ignore next */
-    $scope.showCreateOrgWidget = function() {
-      return ($rootScope.currentUser.isBasic() || $rootScope.currentUser.isGrandfathered()) &&
-              !$rootScope.currentUser.isEnterpriseCustomer();
-    };
-
-    /* istanbul ignore next */
-    $scope.otpDeviceNotSet = function() {
-      return _.isEmpty($rootScope.currentUser.settings.otpDevices);
-    };
-
-    function showFundModal() {
-      // Check for bitfinex enterpise
-      // TODO: Barath - remove this and do a cleaner fix along with oauth/signup referral      
-      if (!_.isEmpty($rootScope.wallets.all) && !isBitfinexReferent()) {
-        return $rootScope.enterprises.current &&
-               $rootScope.enterprises.current.balance === 0 && $rootScope.enterprises.current.isPersonal;
-      }
-    }
-
     /**
-     * show the wallet list once filtering listeners are stabilized
-     * @private
-     */
+      * show the wallet list once filtering listeners are stabilized
+      * @private
+      */
     function setFilteredWalletsForUI() {
       if (!_.isEmpty($rootScope.wallets.all)) {
         $scope.filteredWalletsExist = true;
@@ -122,7 +62,7 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
     // Link off to the create new wallet flow
     $scope.createNewWallet = function() {
       // track the create flow kick-off
-      AnalyticsProxy.track('CreateWalletStarted', { invitation: !!$rootScope.invitation });
+      AnalyticsProxy.track('CreateWalletStarted');
 
       // If the user has a weak login password, we force them to upgrade it
       // before they can create any more wallets
@@ -138,19 +78,23 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
 
     // function to check if the user can create wallets on the current enterprise
     $scope.canCreateWallet = function() {
-      if ($rootScope.enterprises.current && $rootScope.enterprises.current.isAdmin) {
+      if ($rootScope.enterprises.current && $rootScope.enterprises.current.isPersonal) {
         return true;
       }
+      // If the user is not an enterprise customer, then he cannot create wallets
+      if (!$rootScope.currentUser.isEnterpriseCustomer()) {
+        return false;
+      }
+      return $rootScope.currentUser.settings.enterprises.some(function(enterprise) {
+       if ($rootScope.enterprises.current && enterprise.id === $rootScope.enterprises.current.id) {
+        return true;
+       }
+      });
     };
 
     // Link in to a specific wallet and set the current wallet on rootscope
     $scope.goToWallet = function(wallet) {
       WalletsAPI.setCurrentWallet(wallet);
-    };
-
-    // Go to identity verification page
-    $scope.goToIdentityVerification = function goToIdentityVerification() {
-      $location.path('/identity/verify');
     };
 
     /**
@@ -165,7 +109,7 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
           openModal({ type: BG_DEV.MODAL_TYPES.otpThenUnlock, walletName: walletShare.walletLabel })
           .then(function(result) {
             if (result.type === 'otpThenUnlockSuccess') {
-              if (!result.data.otp && !$scope.noOtpDeviceSet) {
+              if (!result.data.otp) {
                 throw new Error('Missing otp');
               }
               if (!result.data.password) {
@@ -219,15 +163,15 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
       $scope.processShare = true;
       var params = {
         state: 'accepted',
-        walletShareId: walletShare.id
+        shareId: walletShare.id
       };
       var role = $filter('bgPermissionsRoleConversionFilter')(walletShare.permissions);
       if (role === BG_DEV.WALLET.ROLES.ADMIN || role === BG_DEV.WALLET.ROLES.SPEND) {
-        WalletSharesAPI.getSharedWallet({walletShareId: walletShare.id})
+        WalletSharesAPI.getSharedWallet({shareId: walletShare.id})
         .then(function(data){
           // check if the wallet is a cold wallet. If so accept share without getting secret etc. (this just behaves as a 'view only' share wallet)
           if (!data.keychain) {
-            return WalletSharesAPI.updateShare(params).then($scope.shareUserSuccess);
+            return WalletSharesAPI.updateShare(params).then(shareUserSuccess);
           } else {
             return KeychainsAPI.get($rootScope.currentUser.settings.ecdhKeychain)
             .then(function(sharingKeychain) {
@@ -243,35 +187,32 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
                 return $q.reject(UtilityService.ErrorHelper(errorData));
               }
               // Now we have the sharing keychain, we can work out the secret used for sharing the wallet with us
-              sharingKeychain.xprv = SDK.decrypt($scope.password, sharingKeychain.encryptedXprv);
-              var rootExtKey = SDK.bitcoin.HDNode.fromBase58(sharingKeychain.xprv);
+              sharingKeychain.xprv = UtilityService.Crypto.sjclDecrypt($scope.password, sharingKeychain.encryptedXprv);
+              var rootExtKey = new BIP32(sharingKeychain.xprv);
               // Derive key by path (which is used between these 2 users only)
-              var extKey = rootExtKey.deriveFromPath(data.keychain.path);
-              var secret = SDK.get().getECDHSecret({
-                eckey: extKey.privKey,
-                otherPubKeyHex: data.keychain.fromPubKey
-              });
+              var extKey = rootExtKey.derive(data.keychain.path);
+              var secret = UtilityService.Crypto.getECDHSecret(extKey.eckey.priv, data.keychain.fromPubKey);
 
               // Yes! We got the secret successfully here, now decrypt the shared wallet xprv
-              var decryptedSharedWalletXprv = SDK.decrypt(secret, data.keychain.encryptedXprv);
+              var decryptedSharedWalletXprv = UtilityService.Crypto.sjclDecrypt(secret, data.keychain.encryptedXprv);
 
-              encryptedSharedWalletXprv = SDK.encrypt($scope.password, decryptedSharedWalletXprv);
+              encryptedSharedWalletXprv = UtilityService.Crypto.sjclEncrypt($scope.password, decryptedSharedWalletXprv);
               params.encryptedXprv = encryptedSharedWalletXprv;
               return WalletSharesAPI.updateShare(params);
             });
           }
-        }).then($scope.shareUserSuccess)
+        }).then(shareUserSuccess)
         .catch(AcceptShareErrorHandler(walletShare));
       }
       else {
-        return WalletSharesAPI.updateShare(params).then($scope.shareUserSuccess);
+        return WalletSharesAPI.updateShare(params).then(shareUserSuccess);
       }
     };
 
-    $scope.shareUserSuccess = function() {
+    function shareUserSuccess() {
       // TODO Barath. Might be a better (smoother for UI) way to accept share
       SyncService.sync();
-    };
+    }
 
     function rejectShareSuccess() {
       $scope.processShare = false;
@@ -281,26 +222,10 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
     // reject a share
     $scope.rejectShare = function(walletShare) {
       $scope.processShare = true;
-      WalletSharesAPI.cancelShare({walletShareId: walletShare.id})
+      WalletSharesAPI.cancelShare({shareId: walletShare.id})
       .then(rejectShareSuccess)
       .catch(Notify.errorHandler);
     };
-
-    function showModal(walletsData) {
-      var firstWalletPromptShown = enterpriseCache.get('firstWalletPromptShown');
-      var fundWalletPromptShown = enterpriseCache.get('fundWalletPromptShown');
-      var isWalletModal = true;
-      // if this is the first wallet with no balance, show the fund wallet modal
-      if (showFundModal() && !fundWalletPromptShown) {
-        enterpriseCache.add('fundWalletPromptShown', true);
-        openModal({type: BG_DEV.MODAL_TYPES.fundWallet, userAction: BG_DEV.MODAL_USER_ACTIONS.fundWallet,
-                   url: 'modal/templates/fundWallet.html'}, isWalletModal);
-      } else if ((_.isEmpty(walletsData.allWallets)) && (_.isEmpty($rootScope.walletShares.all.incoming)) && !firstWalletPromptShown) {
-        enterpriseCache.add('firstWalletPromptShown', true);
-        openModal({type: BG_DEV.MODAL_TYPES.createWallet, userAction: BG_DEV.MODAL_USER_ACTIONS.createWallet,
-                   url: 'modal/templates/createWallet.html'}, isWalletModal);
-      }
-    }
 
     // Event Listeners
     // Listen for the enterprises's wallet shares to be set before showing the list
@@ -310,17 +235,16 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
       }
     );
 
+    // Event Listeners
     // Listen for all user wallets to be set
     var killUserWalletsListener = $rootScope.$on('WalletsAPI.UserWalletsSet',
       function(evt, data) {
-        receivedUserWalletsSetEvent = true;
         if (_.isEmpty(data.allWallets)) {
           $scope.noWalletsAcrossEnterprisesExist = true;
         } else {
           $scope.noWalletsAcrossEnterprisesExist = false;
         }
         setFilteredWalletsForUI();
-        showModal(data);
       }
     );
 
@@ -331,56 +255,32 @@ angular.module('BitGo.Enterprise.EnterpriseWalletsController', [])
       killUserWalletsListener();
     });
 
-    function openModal(params, isWalletModal) {
-      if (!params || !params.type) {
+    function openModal(params) {
+      if (!params || !params.type || !params.walletName) {
         throw new Error('Missing modal params');
       }
-      var modalInstance;
-      if (isWalletModal) {
-        modalInstance = $modal.open({
-          templateUrl: params.url,
-          controller: 'ModalController',
-          scope: $scope,
-          size: params.size,
-          resolve: {
-           // The return value is passed to ModalController as 'locals'
-            locals: function () {
-              return {
-                type: params.type,
-                userAction: params.userAction
-              };
-            }
+      var modalInstance = $modal.open({
+        templateUrl: 'modal/templates/modalcontainer.html',
+        controller: 'ModalController',
+        scope: $scope,
+        size: params.size,
+        resolve: {
+          // The return value is passed to ModalController as 'locals'
+          locals: function () {
+            return {
+              type: params.type,
+              userAction: BG_DEV.MODAL_USER_ACTIONS.acceptShare,
+              walletName: params.walletName
+            };
           }
-        });
-      }
-     // if it is a wallet share accept
-      else {
-        // check for wallet name while accepting share
-        if (!params.walletName) {
-          throw new Error('Missing modal params');
         }
-        modalInstance = $modal.open({
-          templateUrl: 'modal/templates/modalcontainer.html',
-          controller: 'ModalController',
-          scope: $scope,
-          size: params.size,
-          resolve: {
-            // The return value is passed to ModalController as 'locals'
-            locals: function () {
-              return {
-                type: params.type,
-                userAction: BG_DEV.MODAL_USER_ACTIONS.acceptShare,
-                walletName: params.walletName
-              };
-            }
-          }
-        });
-      }
+      });
       return modalInstance.result;
     }
 
     function init() {
       $rootScope.setContext('enterpriseWalletsList');
+
       $scope.balance = {
         bitcoinTotal: 0
       };

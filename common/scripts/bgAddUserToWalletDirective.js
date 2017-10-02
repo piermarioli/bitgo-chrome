@@ -9,8 +9,8 @@ angular.module('BitGo.Common.BGAddUserToWalletDirective', [])
  *   <div bg-add-user-to-wallet></div>
  */
 
-.directive('bgAddUserToWallet', ['$rootScope', '$q', 'UserAPI', 'NotifyService', 'KeychainsAPI', 'UtilityService', '$modal', 'WalletSharesAPI', '$filter', 'WalletsAPI', 'SyncService', 'BG_DEV', 'SDK',
-  function($rootScope, $q, UserAPI, Notify, KeychainsAPI, UtilityService, $modal, WalletSharesAPI, $filter, WalletsAPI, SyncService, BG_DEV, SDK) {
+.directive('bgAddUserToWallet', ['$rootScope', '$q', 'UserAPI', 'NotifyService', 'KeychainsAPI', 'UtilityService', '$modal', 'WalletSharesAPI', '$filter', 'WalletsAPI', 'SyncService', 'BG_DEV',
+  function($rootScope, $q, UserAPI, Notify, KeychainsAPI, UtilityService, $modal, WalletSharesAPI, $filter, WalletsAPI, SyncService, BG_DEV) {
     return {
       restrict: 'A',
       controller: ['$scope', function($scope) {
@@ -37,7 +37,7 @@ angular.module('BitGo.Common.BGAddUserToWalletDirective', [])
               openModal({type: BG_DEV.MODAL_TYPES.otpThenUnlock})
               .then(function(result) {
                 if (result.type === 'otpThenUnlockSuccess') {
-                  if (!result.data.otp && $rootScope.currentUser.settings.otpDevices > 0) {
+                  if (!result.data.otp) {
                     throw new Error('Missing otp');
                   }
                   if (!result.data.password) {
@@ -79,7 +79,6 @@ angular.module('BitGo.Common.BGAddUserToWalletDirective', [])
         * @params {object} - data required for the create wallet share function
         * @returns {promise} with data/error from the server calls.
         */
-       // TODO(ben): replace with SDK's shareWallet method?
         $scope.shareWallet = function (shareParams) {
           var error = {
             status: 401
@@ -102,29 +101,25 @@ angular.module('BitGo.Common.BGAddUserToWalletDirective', [])
                 error.data = { needsPasscode: true, key: null };
                 return $q.reject(UtilityService.ErrorHelper(error));
               }
-              var xprv = SDK.decrypt($scope.password, data.encryptedXprv);
+              var xprv = UtilityService.Crypto.sjclDecrypt($scope.password, data.encryptedXprv);
               // init a new bip32 object based on the xprv from the server
-              var testHDNode;
+              var testBip32;
               try {
-                testHDNode = SDK.bitcoin.HDNode.fromBase58(xprv);
-                console.assert(testHDNode.privKey);
+                testBip32 = new Bitcoin.BIP32(xprv);
               } catch (e) {
                 error.error = "Could not share wallet. Invalid private key";
                 return $q.reject(error);
               }
-              var testXpub = testHDNode.neutered().toBase58();
+              var testXpub = testBip32.extended_public_key_string();
               // check if the xprv returned matches the xpub sent to the server
               if ($rootScope.wallets.all[$scope.walletId].data.private.keychains[0].xpub !== testXpub) {
                 error.error = "This is a legacy wallet and cannot be shared.";
                 return $q.reject(error);
               }
-              var eckey = SDK.bitcoin.ECKey.makeRandom();
-              var secret = SDK.get().getECDHSecret({
-                otherPubKeyHex: createShareParams.keychain.toPubKey,
-                eckey: eckey
-              });
-              createShareParams.keychain.fromPubKey = eckey.pub.toHex();
-              createShareParams.keychain.encryptedXprv = SDK.encrypt(secret, xprv);
+              var eckey = new Bitcoin.ECKey();
+              var secret = UtilityService.Crypto.getECDHSecret(eckey.priv, createShareParams.keychain.toPubKey);
+              createShareParams.keychain.fromPubKey = eckey.getPubKeyHex();
+              createShareParams.keychain.encryptedXprv = UtilityService.Crypto.sjclEncrypt(secret, xprv);
               return WalletSharesAPI.createShare($scope.walletId, createShareParams);
             }
           })
@@ -174,7 +169,6 @@ angular.module('BitGo.Common.BGAddUserToWalletDirective', [])
         };
 
         // Triggers otp modal (with login password) to open if user needs to otp before sending a tx
-        /* istanbul ignore next - all functionality provided by modal controller */
         function openModal(params) {
           if (!params || !params.type) {
             throw new Error('Missing modal type');

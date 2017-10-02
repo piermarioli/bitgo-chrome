@@ -797,18 +797,6 @@ pre code {
   clear: both;
 }
 
-.col-xss-1,
-.col-xss-2,
-.col-xss-3,
-.col-xss-4,
-.col-xss-5,
-.col-xss-6,
-.col-xss-7,
-.col-xss-8,
-.col-xss-9,
-.col-xss-10,
-.col-xss-11,
-.col-xss-12,
 .col-xs-1,
 .col-xs-2,
 .col-xs-3,
@@ -863,174 +851,66 @@ pre code {
   padding-left: 15px;
 }
 
-.col-xss-1 {
+.col-xs-1,
+.col-xs-2,
+.col-xs-3,
+.col-xs-4,
+.col-xs-5,
+.col-xs-6,
+.col-xs-7,
+.col-xs-8,
+.col-xs-9,
+.col-xs-10,
+.col-xs-11 {
+  float: left;
+}
+
+.col-xs-1 {
   width: 8.333333333333332%;
 }
 
-.col-xss-2 {
+.col-xs-2 {
   width: 16.666666666666664%;
 }
 
-.col-xss-3 {
+.col-xs-3 {
   width: 25%;
 }
 
-.col-xss-4 {
+.col-xs-4 {
   width: 33.33333333333333%;
 }
 
-.col-xss-5 {
+.col-xs-5 {
   width: 41.66666666666667%;
 }
 
-.col-xss-6 {
+.col-xs-6 {
   width: 50%;
 }
 
-.col-xss-7 {
+.col-xs-7 {
   width: 58.333333333333336%;
 }
 
-.col-xss-8 {
+.col-xs-8 {
   width: 66.66666666666666%;
 }
 
-.col-xss-9 {
+.col-xs-9 {
   width: 75%;
 }
 
-.col-xss-10 {
+.col-xs-10 {
   width: 83.33333333333334%;
 }
 
-.col-xss-11 {
+.col-xs-11 {
   width: 91.66666666666666%;
 }
 
-.col-xss-12 {
+.col-xs-12 {
   width: 100%;
-}
-
-.col-xss-offset-1 {
-  margin-left: 8.333333333333332%;
-}
-.col-xss-offset-2 {
-  margin-left: 16.666666666666664%;
-}
-.col-xss-offset-3 {
-  margin-left: 25%;
-}
-.col-xss-offset-4 {
-  margin-left: 33.33333333333333%;
-}
-.col-xss-offset-5 {
-  margin-left: 41.66666666666667%;
-}
-.col-xss-offset-6 {
-  margin-left: 50%;
-}
-.col-xss-offset-7 {
-  margin-left: 58.333333333333336%;
-}
-.col-xss-offset-8 {
-  margin-left: 66.66666666666666%;
-}
-.col-xss-offset-9 {
-  margin-left: 75%;
-}
-.col-xss-offset-10 {
-  margin-left: 83.33333333333334%;
-}
-.col-xss-offset-11 {
-  margin-left: 91.66666666666666%;
-}
-
-@media (min-width: 490px) {
-  .container {
-    max-width: 490px;
-  }
-  .col-xs-1,
-  .col-xs-2,
-  .col-xs-3,
-  .col-xs-4,
-  .col-xs-5,
-  .col-xs-6,
-  .col-xs-7,
-  .col-xs-8,
-  .col-xs-9,
-  .col-xs-10,
-  .col-xs-11 {
-    float: left;
-  }
-  .col-xs-1 {
-    width: 8.333333333333332%;
-  }
-  .col-xs-2 {
-    width: 16.666666666666664%;
-  }
-  .col-xs-3 {
-    width: 25%;
-  }
-  .col-xs-4 {
-    width: 33.33333333333333%;
-  }
-  .col-xs-5 {
-    width: 41.66666666666667%;
-  }
-  .col-xs-6 {
-    width: 50%;
-  }
-  .col-xs-7 {
-    width: 58.333333333333336%;
-  }
-  .col-xs-8 {
-    width: 66.66666666666666%;
-  }
-  .col-xs-9 {
-    width: 75%;
-  }
-  .col-xs-10 {
-    width: 83.33333333333334%;
-  }
-  .col-xs-11 {
-    width: 91.66666666666666%;
-  }
-  .col-xs-12 {
-    width: 100%;
-  }
-  .col-xs-offset-1 {
-    margin-left: 8.333333333333332%;
-  }
-  .col-xs-offset-2 {
-    margin-left: 16.666666666666664%;
-  }
-  .col-xs-offset-3 {
-    margin-left: 25%;
-  }
-  .col-xs-offset-4 {
-    margin-left: 33.33333333333333%;
-  }
-  .col-xs-offset-5 {
-    margin-left: 41.66666666666667%;
-  }
-  .col-xs-offset-6 {
-    margin-left: 50%;
-  }
-  .col-xs-offset-7 {
-    margin-left: 58.333333333333336%;
-  }
-  .col-xs-offset-8 {
-    margin-left: 66.66666666666666%;
-  }
-  .col-xs-offset-9 {
-    margin-left: 75%;
-  }
-  .col-xs-offset-10 {
-    margin-left: 83.33333333333334%;
-  }
-  .col-xs-offset-11 {
-    margin-left: 91.66666666666666%;
-  }
 }
 
 @media (min-width: 768px) {
@@ -3925,8 +3805,14 @@ textarea.input-group-sm > .input-group-btn > .btn {
 
 .nav > li > a {
   position: relative;
-  display: inline-block;
-  padding: 10px 18px;
+  display: block;
+  padding: 10px 15px;
+}
+
+.nav > li > a:hover,
+.nav > li > a:focus {
+  text-decoration: none;
+  background-color: #eeeeee;
 }
 
 .nav > li.disabled > a {
@@ -4185,10 +4071,12 @@ textarea.input-group-sm > .input-group-btn > .btn {
 }
 
 .navbar-collapse {
-  padding-top: 10px;
+  max-height: 340px;
   padding-right: 15px;
   padding-left: 15px;
   overflow-x: visible;
+  border-top: 1px solid transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
   -webkit-overflow-scrolling: touch;
 }
 
@@ -4218,6 +4106,7 @@ textarea.input-group-sm > .input-group-btn > .btn {
 
 @media (min-width: 768px) {
   .navbar-collapse {
+    width: auto;
     border-top: 0;
     box-shadow: none;
   }
@@ -4373,14 +4262,14 @@ textarea.input-group-sm > .input-group-btn > .btn {
 @media (min-width: 768px) {
   .navbar-nav {
     float: left;
-    margin: 0px 0px 0px 66px;
+    margin: 0;
   }
   .navbar-nav > li {
     float: left;
   }
   .navbar-nav > li > a {
-    padding-top: 12px;
-    padding-bottom: 11px;
+    padding-top: 15px;
+    padding-bottom: 15px;
   }
 }
 
@@ -4499,6 +4388,16 @@ textarea.input-group-sm > .input-group-btn > .btn {
 
 .navbar-default .navbar-text {
   color: #777777;
+}
+
+.navbar-default .navbar-nav > li > a {
+  color: #777777;
+}
+
+.navbar-default .navbar-nav > li > a:hover,
+.navbar-default .navbar-nav > li > a:focus {
+  color: #333333;
+  background-color: transparent;
 }
 
 .navbar-default .navbar-nav > .active > a,

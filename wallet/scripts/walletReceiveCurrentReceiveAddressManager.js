@@ -8,35 +8,16 @@
  */
 angular.module('BitGo.Wallet.WalletReceiveCurrentReceiveAddressManager', [])
 
-.directive('walletReceiveCurrentReceiveAddressManager', ['$rootScope', '$timeout', '$compile', '$http', '$modal', '$templateCache', 'NotifyService', 'LabelsAPI', 'BG_DEV', 'ssAPI',
-  function($rootScope, $timeout, $compile, $http, $modal, $templateCache, NotifyService, LabelsAPI, BG_DEV, ssAPI) {
+.directive('walletReceiveCurrentReceiveAddressManager', ['$rootScope', '$timeout', '$compile', '$http', '$templateCache', 'NotifyService', 'LabelsAPI', 'BG_DEV',
+  function($rootScope, $timeout, $compile, $http, $templateCache, NotifyService, LabelsAPI, BG_DEV) {
     return {
       restrict: 'A',
       replace: true,
       require: '^?walletReceiveManager',
       controller: ['$scope', function($scope) {
-
-        // Open the modal when the user clicks on receive alt-coin
-        $scope.useAltCoin = function(){
-
-            var modalInstance = $modal.open({
-              templateUrl: 'modal/templates/ssReceiveAltCoin.html',
-              scope: $scope,
-              resolve: {
-                // The return value is passed to ModalController as 'locals'
-                locals: function () {
-                  return {
-                    userAction: BG_DEV.MODAL_USER_ACTIONS.ssReceiveAltCoin,
-                    type: BG_DEV.MODAL_TYPES.ssReceiveAltCoin
-                  };
-                }
-              }
-            });
-            return modalInstance.result;
-        };
-
         // state to let user know when an address is being generated
         $scope.addressBeingGenerated = null;
+
         /**
          * Logic to show/hide the main address label show/hide buttons
          */

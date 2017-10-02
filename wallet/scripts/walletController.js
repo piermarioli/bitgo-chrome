@@ -100,20 +100,16 @@ angular.module('BitGo.Wallet.WalletController', [])
     /**
      * Listen for changes in the wallet's state and swap templates / sync app as needed
      */
-    var killStateListener = $scope.$watch('state', function(newState, oldState) {
-      if (newState) {
+    var killStateListener = $scope.$watch('state', function(state) {
+      if (state) {
         // If the user has a weak login password and they're trying to spend btc,
         // we force them to upgrade it before they can send any btc
-        if (newState === 'send' && RequiredActionService.hasAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW)) {
+        if (state === 'send' && RequiredActionService.hasAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW)) {
           return RequiredActionService.runAction(BG_DEV.REQUIRED_ACTIONS.WEAK_PW);
         }
         // Otherwise set the template as needed and sync the app state
         $scope.walletStateTemplateSource = getTemplate();
-        // sync only if old state is not equal to new state
-        // If they are the same it means, we are initializing the controller and url change will handle sync
-        if (oldState !== newState) {
-          SyncService.sync();
-        }
+        SyncService.sync();
       }
     });
 

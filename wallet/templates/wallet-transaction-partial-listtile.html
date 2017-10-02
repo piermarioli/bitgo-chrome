@@ -16,12 +16,12 @@
     <div ng-hide="txIsTransferWithinSameWallet()">
       <!-- Tx was a transfer SENT to another of the user's BitGo Wallets -->
       <span ng-show="txIsWithdrawal()">
-        Transfer to <b bg-get-address-label address-id="{{ tx.otherWalletId }}" wallet-id="{{ tx.otherWalletId }}" class="u-wordBreak">{{ label }}</b>
+        Transfer to <b bg-get-address-label address-id="{{ tx.otherWalletId }}" wallet-id="{{ tx.otherWalletId }}">{{ label }}</b>
       </span>
 
       <!-- Tx was a transfer RECEIVED from another of the user's BitGo Wallets -->
       <span ng-hide="txIsWithdrawal()">
-        Transfer from <b bg-get-address-label address-id="{{ tx.otherWalletId }}" wallet-id="{{ tx.otherWalletId }}" class="u-wordBreak">{{ label }}</b>
+        Transfer from <b bg-get-address-label address-id="{{ tx.otherWalletId }}" wallet-id="{{ tx.otherWalletId }}">{{ label }}</b>
       </span>
     </div>
 
@@ -35,12 +35,12 @@
   <div ng-hide="txIsTransfer()" class="transactionsTable-text">
     <!-- Tx was SENT to a non-BitGo address -->
     <span ng-show="txIsWithdrawal()">
-      Sent <span feature-flag="instant" ng-show="tx.isInstant">as Instant Transaction </span>to <b bg-get-address-label address-id="{{ tx.toAddress }}" wallet-id="{{ tx.walletId }}" class="u-wordBreak">{{ label }}</b>
+      Sent to <b bg-get-address-label address-id="{{ tx.toAddress }}" wallet-id="{{ tx.walletId }}">{{ label }}</b>
     </span>
 
     <!-- Tx was RECEIVED from a non-BitGo address -->
     <span ng-hide="txIsWithdrawal()">
-      Received <span bg-get-address-label address-id="{{ tx.toAddress }}" wallet-id="{{ tx.walletId }}"><span ng-show="label"><span feature-flag="instant" ng-show="tx.isInstant">as Instant Transaction </span>at </span> <b class="u-wordBreak">{{ label }}</b></span>
+      Received <span bg-get-address-label address-id="{{ tx.toAddress }}" wallet-id="{{ tx.walletId }}"><span ng-show="label">at </span> <b>{{ label }}</b></span>
     </span>
   </div>
   <div ng-show="txIsUnconfirmed()" class="transactionsTable-pending">Pending</div>

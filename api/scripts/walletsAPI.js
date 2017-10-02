@@ -7,8 +7,13 @@ angular.module('BitGo.API.WalletsAPI', [])
   which wallet is being viewed if the user is within an enterprise looking at
   a wallet
 */
-.factory('WalletsAPI', ['$q', '$location', '$rootScope', 'WalletModel', 'NotifyService', 'UtilityService', 'CacheService', 'LabelsAPI', 'SDK',
-  function($q, $location, $rootScope, WalletModel, Notify, UtilityService, CacheService, LabelsAPI, SDK) {
+.factory('WalletsAPI', ['$q', '$location', '$resource', '$rootScope', 'WalletModel', 'NotifyService', 'UtilityService', 'CacheService', 'LabelsAPI',
+  function($q, $location, $resource, $rootScope, WalletModel, Notify, UtilityService, CacheService, LabelsAPI) {
+    // $http fetch helpers
+    var kApiServer = UtilityService.API.apiServer;
+    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
+    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+
     // local copy of all wallets that exist for a given user
     var allWallets;
 
@@ -105,33 +110,16 @@ angular.module('BitGo.API.WalletsAPI', [])
       }
     }
 
-    /**
-      * Get all approvals given an array of wallets
-      * @param list of wallets {Object}
-      * @returns list of pending approvals on the wallet{Array}
-      * @private
-      */
-    function getApprovals(wallets) {
-      var allWalletsApprovals = [];
-      if (wallets) {
-        allWalletsApprovals = _(wallets).pluck('data').pluck('pendingApprovals').filter().flatten().value();
-      }
-      return allWalletsApprovals;
-    }
-
     function setAllEnterpriseApprovals() {
       if (!$rootScope.enterprises.all) {
         console.log('Cannot set approvals on enterprises without a enterprises');
         return false;
       }
       _.forIn($rootScope.enterprises.all, function(enterprise) {
-        var approvals = [];
         if (enterprise && enterprise.isPersonal) {
-          approvals = getApprovals(getPersonalEnterpriseWallets(allWallets));
-          enterprise.setApprovals(approvals);
+          enterprise.setApprovals(getPersonalEnterpriseWallets(allWallets));
         } else {
-          approvals = getApprovals(getNormalEnterpriseWallets(allWallets, enterprise));
-          enterprise.setApprovals(approvals);
+          enterprise.setApprovals(getNormalEnterpriseWallets(allWallets, enterprise));
         }
       });
     }
@@ -146,10 +134,6 @@ angular.module('BitGo.API.WalletsAPI', [])
 
       var urlWalletId = UtilityService.Url.getWalletIdFromUrl();
       var urlCurrentWallet = $rootScope.wallets.all[urlWalletId];
-      // handle wrong url by redirecting them to the dashboard. Create wallet is exception
-      if ((urlWalletId && !urlCurrentWallet) && (urlWalletId !== 'create')) {
-        $location.path('/enterprise/personal/wallets');
-      }
       if (urlWalletId && urlCurrentWallet) {
         setCurrentWallet(urlCurrentWallet);
       }
@@ -184,16 +168,17 @@ angular.module('BitGo.API.WalletsAPI', [])
       if (params.gpk) {
         query.gpk = 1;
       }
-      return SDK.wrap(
-        SDK.get().wallets().getWallet({ id: params.bitcoinAddress, gpk: params.gpk ? 1 : undefined })
-      )
-      .then(function(wallet) {
-        wallet = new WalletModel.Wallet(wallet.wallet);
-        // update the cache and rootScope wallets object
-        walletCache.add(params.bitcoinAddress, wallet);
-        allWallets[wallet.data.id] = wallet;
-        return wallet;
-      });
+      var resource = $resource(kApiServer + '/wallet/' + params.bitcoinAddress);
+      return resource.get(query).$promise
+      .then(
+        function(wallet) {
+          wallet = new WalletModel.Wallet(wallet);
+          // update the cache and rootScope wallets object
+          walletCache.add(params.bitcoinAddress, wallet);
+          allWallets[wallet.data.id] = wallet;
+          return wallet;
+        }
+      );
     }
 
     function emitWalletSetMessage() {
@@ -210,63 +195,66 @@ angular.module('BitGo.API.WalletsAPI', [])
       if (localWalletsOnly) {
         return allWallets;
       }
-      return SDK.wrap(
-        SDK.get().wallets().list({ limit: 500 })
-      )
-      .then(function(data) {
-        var pendingFetches = data.wallets.length;
-        function onFetchFinished() {
-          setFilteredWallets();
+      var resource = $resource(kApiServer + '/wallet?limit=500', {});
+      return resource.get({}).$promise
+      .then(
+        function(data) {
+          var pendingFetches = data.wallets.length;
 
-          // set pending approvals of all the wallets on enterprises on rootscope
-          setAllEnterpriseApprovals();
-          // All user wallets are set along with approvals
-          emitWalletSetMessage();
-          return allWallets;
-        }
+          function onFetchFinished() {
+            setFilteredWallets();
 
-        function onFetchSuccess(wallet) {
-          // we only support safe and safehd wallets currently
-          if (wallet.data.type === 'safehd' || wallet.data.type === 'safe') {
-            allWallets[wallet.data.id] = wallet;
+            // set pending approvals of all the wallets on enterprises on rootscope
+            setAllEnterpriseApprovals();
+            // All user wallets are set along with approvals
+            emitWalletSetMessage();
+            return allWallets;
           }
-          if (--pendingFetches === 0) {
-            onFetchFinished();
-          }
-        }
 
-        function onFetchFail(error) {
-          // TODO (Gavin): expose errors here?
-          if (--pendingFetches === 0) {
-            onFetchFinished();
-          }
-        }
-
-        var numWallets = data.wallets.length;
-        if (numWallets > 0){
-          // Fetch each single wallet
-          // Note: use native 'for in' loop b/c we need to use 'continue'
-          for (var idx = 0; idx < numWallets; idx++) {
-            var curWallet = data.wallets[idx].wallet;
-            // Omit custodial accounts
-            if (curWallet.custodialAccount) {
-              pendingFetches--;
-              continue;
+          function onFetchSuccess(wallet) {
+            // we only support safe and safehd wallets currently
+            if (wallet.data.type === 'safehd' || wallet.data.type === 'safe') {
+              allWallets[wallet.data.id] = wallet;
             }
-            var fetchData = {
-              type: curWallet.type,
-              bitcoinAddress: curWallet.id
-            };
-            getWallet(fetchData, false)
-            .then(onFetchSuccess)
-            .catch(onFetchFail);
+            if (--pendingFetches === 0) {
+              onFetchFinished();
+            }
           }
-        }
-        else {
-          // User wallets are now set along with approvals. Even though they are empty
-          emitWalletSetMessage();
-        }
-      });
+
+          function onFetchFail(error) {
+            // TODO (Gavin): expose errors here?
+            if (--pendingFetches === 0) {
+              onFetchFinished();
+            }
+          }
+
+          var numWallets = data.wallets.length;
+          if (numWallets > 0){
+            // Fetch each single wallet
+            // Note: use native 'for in' loop b/c we need to use 'continue'
+            for (var idx = 0; idx < numWallets; idx++) {
+              var curWallet = data.wallets[idx];
+              // Omit custodial accounts
+              if (curWallet.custodialAccount) {
+                pendingFetches--;
+                continue;
+              }
+              var fetchData = {
+                type: curWallet.type,
+                bitcoinAddress: curWallet.id
+              };
+              getWallet(fetchData, false)
+              .then(onFetchSuccess)
+              .catch(onFetchFail);
+            }
+          }
+          else {
+            // User wallets are now set along with approvals. Even though they are empty
+            emitWalletSetMessage();
+          }
+        },
+        PromiseErrorHelper()
+      );
     }
 
     // Create a new BitGo safeHD wallet
@@ -296,16 +284,16 @@ angular.module('BitGo.API.WalletsAPI', [])
         enterprise: safeId($rootScope.enterprises.current.id)
       };
 
-      return SDK.wrap(
-        SDK.get().wallets().add(walletData)
-      )
-      .then(function(wallet) {
-        // TODO (ben): WalletModel.Wallet should be dealing with SDK wallet objects
-        // (or being entirely replaced by them, by having the SDK Wallet objects subsume their functionality)
-        var decoratedWallet = new WalletModel.Wallet(wallet.wallet);
-        walletCache.add(decoratedWallet.data.id, decoratedWallet);
-        return decoratedWallet;
-      });
+      var resource = $resource(kApiServer + '/wallet', {});
+      return new resource(walletData).$save({})
+      .then(
+        function(wallet) {
+          var decoratedWallet = new WalletModel.Wallet(wallet);
+          walletCache.add(decoratedWallet.data.id, decoratedWallet);
+          return decoratedWallet;
+        },
+        PromiseErrorHelper()
+      );
     }
 
     /**
@@ -315,14 +303,15 @@ angular.module('BitGo.API.WalletsAPI', [])
       * @param allowExisting {Bool} if true, allow re-use of existing, unused addresses
       * @returns {Promise}
       */
-    /* istanbul ignore next */
     function createChainAddress(bitcoinAddress, chain, allowExisting) {
-      var wallet = walletCache.get(bitcoinAddress);
-      return SDK.wrap(
-        SDK.get().newWalletObject(wallet.data).createAddress({
-          chain: chain,
-          allowExisting: allowExisting ? '1' : undefined
-        })
+      if (!bitcoinAddress || !chain.toString() || !allowExisting.toString()) {
+        throw new Error('invalid params');
+      }
+      var resource = $resource(kApiServer + '/wallet/' + bitcoinAddress + '/address/' + chain, {});
+      return new resource({ allowExisting: allowExisting }).$save()
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 
@@ -332,14 +321,16 @@ angular.module('BitGo.API.WalletsAPI', [])
       * @param {String} The userId of the person to be revoked
       * @returns {promise} with success/error messages
     */
-    /* istanbul ignore next */
     function revokeAccess(bitcoinAddress, userId) {
       if (!bitcoinAddress || !userId) {
         throw new Error('Invalid params');
       }
       var params = {user: userId};
-      return SDK.wrap(
-        SDK.doPost('/wallet/' + bitcoinAddress + '/policy/revoke', params)
+      var resource = $resource(kApiServer + '/wallet/' + bitcoinAddress + '/policy/revoke', {});
+      return new resource(params).$save()
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 
@@ -373,15 +364,21 @@ angular.module('BitGo.API.WalletsAPI', [])
       * @param {object} params for the address list query
       * @returns {object} promise with data for address list fetch
       */
-    /* istanbul ignore next */
     function getAllAddresses(params) {
       if (!params.bitcoinAddress || !params.limit || !params.chain.toString()) {
         throw new Error('Invalid params');
       }
-      params.sort = params.sort || 1;
-      return SDK.wrap(
-        SDK.get().newWalletObject({ id: params.bitcoinAddress })
-        .addresses(params)
+      var resource = $resource(kApiServer + '/wallet/' + params.bitcoinAddress + '/addresses', {
+        limit: params.limit,
+        skip: params.skip || 0,
+        sort: params.sort || 1,
+        chain: params.chain || 0,
+        details: params.details || false
+      });
+      return resource.get({}).$promise
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 
@@ -391,13 +388,15 @@ angular.module('BitGo.API.WalletsAPI', [])
      * @returns {Promise} with wallet recovery info
      * @public
      */
-    /* istanbul ignore next */
     function getWalletPasscodeRecoveryInfo(params) {
       if (!params.walletAddress) {
         throw new Error('Invalid params');
       }
-      return SDK.wrap(
-        SDK.doPost('/wallet/' + params.walletAddress + '/passcoderecovery')
+      var resource = $resource(kApiServer + '/wallet/' + params.walletAddress + '/passcoderecovery', {});
+      return new resource(params).$save({})
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 
@@ -407,21 +406,23 @@ angular.module('BitGo.API.WalletsAPI', [])
      * @returns {Promise} with success/error
      * @public
      */
-    /* istanbul ignore next */
     function removeWallet(wallet) {
       if (!wallet) {
         throw new Error('Invalid params');
       }
       var params = {walletAddress: wallet.data.id};
-      return SDK.wrap(
-        SDK.get().newWalletObject({ id: wallet.data.id }).delete()
-      )
-      .then(function() {
-        wallet.data.pendingApprovals.forEach(function(pendingApproval){
-          $rootScope.enterprises.current.deleteApproval(pendingApproval.id);
-        });
-        removeWalletFromScope(wallet);
-      });
+      var resource = $resource(kApiServer + '/wallet/' + wallet.data.id, {});
+      return new resource(params).$remove({})
+      .then(
+        function(data){
+          // cleans up data before next wallets fetch
+          wallet.data.pendingApprovals.forEach(function(pendingApproval){
+            $rootScope.enterprises.current.deleteApproval(pendingApproval.id);
+          });
+          removeWalletFromScope(wallet);
+        },
+        PromiseErrorHelper()
+      );
     }
 
     /**
@@ -443,13 +444,17 @@ angular.module('BitGo.API.WalletsAPI', [])
      * @returns {Promise} with success/error
      * @public
      */
-    /* istanbul ignore next */
     function renameWallet(params) {
       if (!params.walletAddress || !params.label) {
         throw new Error('Invalid params');
       }
-      return SDK.wrap(
-        SDK.doPut('/wallet/' + params.walletAddress, params)
+      var resource = $resource(kApiServer + '/wallet/' + params.walletAddress, {}, {
+        update: { method: 'PUT' }
+      });
+      return new resource(params).$update({})
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 

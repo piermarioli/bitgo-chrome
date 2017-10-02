@@ -3,24 +3,20 @@ angular.module('BitGo.API.KeychainsAPI', [])
   Notes:
   - This module is for managing all http requests for Keychains
 */
-.factory('KeychainsAPI', ['$q', '$location', '$rootScope', 'UtilityService', 'UserAPI', 'SDK',
-  function($q, $location, $rootScope, Utils, UserAPI, SDK) {
+.factory('KeychainsAPI', ['$q', '$location', '$resource', '$rootScope', 'UtilityService', 'UserAPI',
+  function($q, $location, $resource, $rootScope, Utils, UserAPI) {
+    var kApiServer = Utils.API.apiServer;
+    var PromiseSuccessHelper = Utils.API.promiseSuccessHelper;
     var PromiseErrorHelper = Utils.API.promiseErrorHelper;
 
     // Helper: generates a new BIP32 keychain to use
     function generateKey() {
-      var keyData = SDK.get().keychains().create();
-      return SDK.bitcoin.HDNode.fromBase58(keyData.xprv);
-    }
-
-    /* istanbul ignore next */
-    function getColdKey(secret) {
-      if (typeof(secret) !== 'string') {
-        throw Error('illegal argument');
-      }
-      return SDK.wrap(
-        SDK.doGet('/coldkey/' + secret)
-      );
+      // Generate the entropy for the keychain's seed
+      var randomBytes = new Array(256);
+      new Bitcoin.SecureRandom().nextBytes(randomBytes);
+      var seed = Bitcoin.Util.bytesToHex(randomBytes);
+      // create a new BIP32 object from the random seed
+      return new Bitcoin.BIP32().initFromSeed(seed);
     }
 
     // Creates keychains on the BitGo server
@@ -30,22 +26,22 @@ angular.module('BitGo.API.KeychainsAPI', [])
       // the passcode used to encrypt the xprv
       var passcode = data.passcode;
       // the BIP32 extended key used to create a keychain when a user wants to use their own backup
-      var hdNode = data.hdNode;
+      var extendedKey = data.extendedKey;
       var saveEncryptedXprv = data.saveEncryptedXprv;
 
       // If the user doesn't provide a key, generate one
-      if (!hdNode) {
-        hdNode = generateKey();
+      if (!extendedKey) {
+        extendedKey = generateKey();
       }
       // Each saved keychain object has these properties
       var keychainData = {
         source: data.source,
-        xpub: hdNode.neutered().toBase58()
+        xpub: extendedKey.extended_public_key_string()
       };
       // If we're storing the encryptedXprv, include this with the request
       if (saveEncryptedXprv) {
         // The encrypted xprv; encrypted with the wallet's passcode
-        keychainData.encryptedXprv = SDK.encrypt(passcode, hdNode.toBase58());
+        keychainData.encryptedXprv = Utils.Crypto.sjclEncrypt(passcode, extendedKey.extended_private_key_string());
         // And a code that is used to encrypt the user's wallet passcode (the 'passcode' referenced in this function)
         // This code is only ever used to encrypt the original passcode for this keychain,
         // and is used only for recovery purposes with the original encrypted xprv blob.
@@ -58,18 +54,17 @@ angular.module('BitGo.API.KeychainsAPI', [])
       function onCreateSuccess(data) {
         // For backup purposes: We'll decorate the returned keychain object
         // with the xprv and encryptedXprv so we can access them in the app
-        if (hdNode.privKey) {
-          data.xprv = hdNode.toBase58();
+        if (extendedKey.has_private_key) {
+          data.xprv = extendedKey.extended_private_key_string();
           if (!data.encryptedXprv) {
-            data.encryptedXprv = SDK.encrypt(passcode, data.xprv);
+            data.encryptedXprv = Utils.Crypto.sjclEncrypt(passcode, data.xprv);
           }
         }
         return data;
       }
       // Return the promise
-      return $q.when(
-        SDK.get().keychains().add(keychainData)
-      )
+      var resource = $resource(kApiServer + '/keychain', {});
+      return new resource(keychainData).$save({})
       .then(
         function(data) {
           return onCreateSuccess(data);
@@ -86,30 +81,25 @@ angular.module('BitGo.API.KeychainsAPI', [])
     }
 
     // Create and return the new BitGo keychain
-    /* istanbul ignore next */
     function createBitGoKeychain() {
-      return SDK.wrap(
-        SDK.get().keychains().createBitGo()
-      );
-    }
-
-    /**
-     * Create and return a new backup keychain from a backup provider
-     * @param {string} the name of the provider to create the xpub from
-     * @returns {Obj} new backup keychain with krs xpub
-     */
-    /* istanbul ignore next */
-    function createBackupKeychain(provider) {
-      return SDK.wrap(
-        SDK.get().keychains().createBackup({ provider: provider })
+      var resource = $resource(kApiServer + '/keychain/bitgo', {});
+      return new resource({}).$save({})
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 
     // Get a specific BitGo keychain
-    /* istanbul ignore next */
     function get(xpub) {
-      return SDK.wrap(
-        SDK.get().keychains().get({ xpub: xpub })
+      if (typeof(xpub) !== 'string') {
+        throw new Error('illegal argument');
+      }
+      var keychainsResource = $resource(kApiServer + '/keychain/' + xpub, {});
+      return new keychainsResource().$save({})
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 
@@ -118,10 +108,17 @@ angular.module('BitGo.API.KeychainsAPI', [])
      * @param {Obj} bitgo keychain object to update
      * @returns {Obj} updated bitgo keychain
      */
-    /* istanbul ignore next */
-    function update(params) {
-      return SDK.wrap(
-        SDK.get().keychains().update(params)
+    function update(keychainData) {
+      if (typeof(keychainData.xpub) !== 'string' || typeof(keychainData.encryptedXprv) !== 'string') {
+        throw new Error('illegal argument');
+      }
+      var resource = $resource(kApiServer + '/keychain/' + keychainData.xpub, {}, {
+        update: { method: 'PUT' }
+      });
+      return new resource(keychainData).$update({})
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 
@@ -131,9 +128,7 @@ angular.module('BitGo.API.KeychainsAPI', [])
       update: update,
       createKeychain: createKeychain,
       createBitGoKeychain: createBitGoKeychain,
-      createBackupKeychain: createBackupKeychain,
-      generateKey: generateKey,
-      getColdKey: getColdKey
+      generateKey: generateKey
     };
   }
 ]);

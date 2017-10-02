@@ -4,18 +4,24 @@
  * @description
  * This manages app API requests for listing jobs through the BitGo website
  */
-/* istanbul ignore next */
 angular.module('BitGo.API.JobsAPI', [])
 
-.factory('JobsAPI', ['SDK',
-  function(SDK) {
+.factory('JobsAPI', ['$resource', 'UtilityService',
+  function($resource, UtilityService) {
+    var kApiServer = UtilityService.API.apiServer;
+    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
+    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+
     /**
     * List the jobs posted on the workable website
     * @private
     */
     function list() {
-      return SDK.wrap(
-        SDK.doGet('/jobs')
+      var resource = $resource(kApiServer + "/jobs", {});
+      return new resource.get({}).$promise
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 

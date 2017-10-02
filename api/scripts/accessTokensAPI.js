@@ -4,11 +4,13 @@
  * @description
  * This manages app API requests for the access token functionality in BitGo
  */
-/* istanbul ignore next */
 angular.module('BitGo.API.AccessTokensAPI', [])
 
-.factory('AccessTokensAPI', ['$resource', 'SDK',
-  function($resource, SDK) {
+.factory('AccessTokensAPI', ['$resource', 'UtilityService',
+  function($resource, UtilityService) {
+    var kApiServer = UtilityService.API.apiServer;
+    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
+    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
 
     /**
     * Add an access token to a user
@@ -19,8 +21,13 @@ angular.module('BitGo.API.AccessTokensAPI', [])
       if (!params) {
         throw new Error('missing params');
       }
-      return SDK.wrap(
-        SDK.doPost('/user/accesstoken', params)
+      var resource = $resource(kApiServer + "/user/accesstoken", {}, {
+        'add': { method: 'POST' }
+      });
+      return new resource(params).$add()
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 
@@ -29,8 +36,11 @@ angular.module('BitGo.API.AccessTokensAPI', [])
     * @private
     */
     function list() {
-      return SDK.wrap(
-        SDK.doGet('/user/accesstoken')
+      var resource = $resource(kApiServer + "/user/accesstoken", {});
+      return new resource.get({}).$promise
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 
@@ -42,8 +52,11 @@ angular.module('BitGo.API.AccessTokensAPI', [])
       if (!accessTokenId) {
         throw new Error('missing accessTokenId');
       }
-      return SDK.wrap(
-        SDK.doDelete('/user/accesstoken/' + accessTokenId)
+      var resource = $resource(kApiServer + '/user/accesstoken/' + accessTokenId, {});
+      return new resource({}).$delete()
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 

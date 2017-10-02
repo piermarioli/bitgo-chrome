@@ -52,7 +52,7 @@ angular.module('BitGo.Common.BGInputToSatoshiConverterDirective', [])
         setError(false);
 
         // app's current bitcoin unit
-        var unit = attrs.bitcoinUnit ||  $rootScope.currency.bitcoinUnit;
+        var unit = $rootScope.currency.bitcoinUnit;
 
         /**
         * checks if the value entered is divisible by one satoshi. If so, sets the error
@@ -186,14 +186,7 @@ angular.module('BitGo.Common.BGInputToSatoshiConverterDirective', [])
           if (!_.has(TYPES, type)) {
             throw new Error('Invalid type');
           }
-
-          var valueAux = value / TYPES[type].modifier;
-          // If the attribute toFixed is passed into the element
-          // the resulting view value will be formatted using that number.
-          if(typeof attrs.toFixed !== 'undefined') {
-            valueAux = parseFloat(parseFloat(valueAux).toFixed(attrs.toFixed));
-          }
-          return valueAux;
+          return value / TYPES[type].modifier;
         }
 
         // conversion "view -> model"

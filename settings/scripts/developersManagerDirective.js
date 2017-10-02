@@ -52,21 +52,11 @@ angular.module('BitGo.Settings.DevelopersManagerDirective', [])
         * Reset to list view when user changes top level sections within settings
         * @private
         */
-        var killStateWatcher = $scope.$on('SettingsController.StateChanged', function(evt, data) {
+        var killStateWatcher = $scope.$on('SettingsController.StateChangesd', function(evt, data) {
           if (data.newState) {
             $scope.setState('list');
           }
         });
-
-        $scope.newToken = false;
-        
-        $scope.setToken = function(token) {
-          $scope.newToken = token;
-        };
-
-        $scope.removeToken = function(token) {
-          $scope.newToken = undefined;
-        };
 
         /**
         * Clean up all watchers when the scope is garbage collected
@@ -75,6 +65,37 @@ angular.module('BitGo.Settings.DevelopersManagerDirective', [])
         $scope.$on('$destroy', function() {
           killStateWatcher();
         });
+
+        $scope.startRemovingToken = function(id) {
+          $scope.IdToConfirmRemove = id;
+        };
+
+        $scope.stopRemovingToken = function() {
+          $scope.IdToConfirmRemove = null;
+        };
+
+        $scope.showRemovingConfirm = function(id) {
+          return id === $scope.IdToConfirmRemove ? true : false;
+        };
+
+        $scope.removeAccessToken = function(accessTokenId) {
+          AccessTokensAPI.remove(accessTokenId)
+          .then(function(data) {
+            $scope.refreshAccessTokens();
+          })
+          .catch(function(error) {
+            console.log('Error getting list of access tokens: ' + error.error);
+          });
+        };
+
+        $scope.newToken = false;
+        $scope.setToken = function(token) {
+          $scope.newToken = token;
+        };
+
+        $scope.removeToken = function(token) {
+          $scope.newToken = undefined;
+        };
 
         function init() {
           $scope.state = 'list';

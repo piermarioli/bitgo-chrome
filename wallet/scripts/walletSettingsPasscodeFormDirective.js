@@ -9,8 +9,8 @@
 
 angular.module('BitGo.Wallet.WalletSettingsPasscodeFormDirective', [])
 
-.directive('walletSettingsPasscodeForm', ['$q', '$rootScope', '$modal', 'UtilityService', 'WalletsAPI', 'KeychainsAPI', 'NotifyService', 'BG_DEV', 'SDK',
-  function($q, $rootScope, $modal, UtilityService, WalletsAPI, KeychainsAPI, NotifyService, BG_DEV, SDK) {
+.directive('walletSettingsPasscodeForm', ['$q', '$rootScope', '$modal', 'UtilityService', 'WalletsAPI', 'KeychainsAPI', 'NotifyService', 'BG_DEV',
+  function($q, $rootScope, $modal, UtilityService, WalletsAPI, KeychainsAPI, NotifyService, BG_DEV) {
     return {
       restrict: 'A',
       controller: ['$scope', function($scope) {
@@ -107,14 +107,14 @@ angular.module('BitGo.Wallet.WalletSettingsPasscodeFormDirective', [])
 
         /**
          * Attempt to decrypt an encrypted xPrv with a password
-         * @param passcode {String} existing (old) wallet passcode
          * @param encryptedXprv {String} wallet's user encryptedXprv
+         * @param passcode {String} existing (old) wallet passcode
          * @returns {String} user's decrypted private key || undefined
          * @private
          */
-        function decryptKeychain(passcode, encryptedXprv) {
+        function decryptKeychain(encryptedXprv, passcode) {
           try {
-            var privKey = SDK.decrypt(passcode, encryptedXprv);
+            var privKey = UtilityService.Crypto.sjclDecrypt(passcode, encryptedXprv);
             return privKey;
           } catch (e) {
             return;
@@ -135,7 +135,7 @@ angular.module('BitGo.Wallet.WalletSettingsPasscodeFormDirective', [])
             KeychainsAPI.get(userXpub)
             .then(function(keychain) {
               // attempt to decrypt the xprv with the password provided
-              var xprv = decryptKeychain($scope.oldPasscode, keychain.encryptedXprv);
+              var xprv = decryptKeychain(keychain.encryptedXprv, $scope.oldPasscode);
               if (!xprv) {
                 var error = { status: 401, message: 'Invalid current wallet password', data: { needsPasscode: true } };
                 return $q.reject(new UtilityService.ErrorHelper(error));
@@ -143,8 +143,7 @@ angular.module('BitGo.Wallet.WalletSettingsPasscodeFormDirective', [])
               // Get the xpub for the xprv provided. It might not match with xpub on the wallet for legacy wallets
               var newBip32;
               try {
-                newBip32 = SDK.bitcoin.HDNode.fromBase58(xprv);
-                console.assert(newBip32.privKey);
+                newBip32 = new Bitcoin.BIP32(xprv);
               } catch (e) {
                 console.log(e.stack);
                 var error = {
@@ -154,8 +153,8 @@ angular.module('BitGo.Wallet.WalletSettingsPasscodeFormDirective', [])
               }
               // encrypt the xprv with the user's new passcode
               var newKeychainData = {
-                encryptedXprv: SDK.encrypt($scope.newPasscode, xprv),
-                xpub: newBip32.neutered().toBase58()
+                encryptedXprv: UtilityService.Crypto.sjclEncrypt($scope.newPasscode, xprv),
+                xpub: newBip32.extended_public_key_string()
               };
               return KeychainsAPI.update(newKeychainData);
             })

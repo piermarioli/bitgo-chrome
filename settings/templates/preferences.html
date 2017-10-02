@@ -1,18 +1,19 @@
-<div settings-preferences-form>
+<div>
+
   <!-- Currency Preferences -->
-  <form  name="settingsCurrencyForm" class="u-marginBottom40 col-md-6">
+  <form name="settingsCurrencyForm" class="u-marginBottom40 col-md-6" settings-preferences-currency-form>
 
     <h2 class="u-marginBottom20">Currency</h2>
 
     <div class="u-marginBottom30">
       <h2 class="u-typography-3">Bitcoin Unit</h2>
       <div class="inputRadio">
-        <input type="radio" name="radioGroupCoin" ng-model="settings.currency.bitcoinUnit" value= "BTC" id="BTC">
-        <label for="BTC"> &nbsp; BTC</label>
+        <input type="radio" name="radioGroupCoin" ng-model="settings.currency.bitcoinUnit" value= "BTC" id="BTCradio">
+        <label for="BTCradio"> &nbsp; BTC</label>
       </div>
       <div class="inputRadio">
-        <input type="radio" name="radioGroupCoin" ng-model="settings.currency.bitcoinUnit" value= "BTC8" id="BTCprecision">
-        <label for="BTCprecision"> &nbsp; BTC (full-precision)</label>
+        <input type="radio" name="radioGroupCoin" ng-model="settings.currency.bitcoinUnit" value= "BTC8" id="BTCradio">
+        <label for="BTCradio"> &nbsp; BTC (full-precision)</label>
       </div>
       <div class="inputRadio">
         <input type="radio" name="radioGroupCoin" id="bitsradio" ng-model="settings.currency.bitcoinUnit" value="bits">
@@ -52,13 +53,13 @@
       </div>
     </div>
     <div class = "buttons">
-      <button ng-show="hasPreferenceChanges()" type="submit" ng-click="submitPreferences()" class = "button">Save changes</button>
+      <button ng-show="hasCurrencyChanges()" type="submit" name="submitCurrency" ng-click="submitCurrency()" class = "button">Save changes</button>
     </div>
 
   </form>
 
   <!-- Notification Preferences -->
-  <form name="settingsNotificationForm" class="col-md-6">
+  <form name="settingsNotificationForm" class="col-md-6" settings-preferences-notification-form>
 
     <h2 class="u-marginBottom20">Notifications</h2>
 
@@ -68,11 +69,9 @@
         <input type="checkbox" id="checkbox1" ng-model="settings.notifications.via_email">
         <label for="checkbox1">Email</label>
       </div>
-      <div ng-show="user.isAuthyUser()">
-        <div class="inputCheckbox">
-          <input type="checkbox" id="checkbox2" ng-model="settings.notifications.via_phone">
-          <label for="checkbox2">Phone</label>
-        </div>
+      <div class="inputCheckbox">
+        <input type="checkbox" id="checkbox2" ng-model="settings.notifications.via_phone" ng-disabled="!settings.phone.verified">
+        <label for="checkbox2">Phone</label>
       </div>
     </div>
     <div class="u-marginBottom30">
@@ -86,7 +85,7 @@
           <label for="checkbox4">Bitcoin is <b>sent</b> from my account</label>
         </div>
     </div>
-    <div ng-show="true">
+    <div ng-show="false">
       <h2 class="u-typography-3">Email digest</h2>
       <div class="inputCheckbox">
         <input type="checkbox" id="checkbox5" ng-model="settings.digest.enabled" ng-change="resetDigest()">
@@ -98,8 +97,16 @@
           <label for="radio1">{{digestIntervals.daily.name}}</label>
         </div>
         <div class="inputRadio">
+          <input type="radio" name="radiogroup" id="radio2" ng-model="settings.digest.intervalSeconds" value="{{digestIntervals.every_other_day.value}}" ng-disabled="!settings.digest.enabled">
+          <label for="radio2">{{digestIntervals.every_other_day.name}}</label>
+        </div>
+        <div class="inputRadio">
           <input type="radio" name="radiogroup" id="radio3" ng-model="settings.digest.intervalSeconds"  value="{{digestIntervals.weekly.value}}" ng-disabled="!settings.digest.enabled">
           <label for="radio3">{{digestIntervals.weekly.name}}</label>
+        </div>
+        <div class="inputRadio">
+          <input type="radio" name="radiogroup" id="radio4" ng-model="settings.digest.intervalSeconds" value="{{digestIntervals.bi_weekly.value}}" ng-disabled="!settings.digest.enabled">
+          <label for="radio4">{{digestIntervals.bi_weekly.name}}</label>
         </div>
         <div class="inputRadio">
           <input type="radio" name="radiogroup" id="radio5" ng-model="settings.digest.intervalSeconds" value="{{digestIntervals.monthly.value}}" ng-disabled="!settings.digest.enabled">
@@ -108,5 +115,10 @@
       </div>
     </div>
 
+    <div class="buttons">
+      <button ng-show="hasNotificationChanges()" class="button" type="submit" name="submitNotifications" ng-click="submitNotifications()">Save Changes</button>
+    </div>
+
   </form>
+
 </div>

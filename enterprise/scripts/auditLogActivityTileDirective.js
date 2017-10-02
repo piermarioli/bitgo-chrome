@@ -6,7 +6,6 @@ angular.module('BitGo.Enterprise.AuditLogActivityTileDirective', [])
 .directive('auditLogActivityTile', ['$compile', '$http', '$templateCache', 'BG_DEV',
   function($compile, $http, $templateCache, BG_DEV) {
     // Returns the template path to compile based on logItem.type
-    /* istanbul ignore next */
     var getTemplate = function(logItemType) {
       var template = '';
       switch(logItemType) {
@@ -43,18 +42,6 @@ angular.module('BitGo.Enterprise.AuditLogActivityTileDirective', [])
         case 'labelAddress':
         // Commenting
         case 'updateComment':
-        // organizations
-        case 'createEnterprise':
-        // TODO: Barath. Fill all these in after backend changes
-        case 'updateEnterpriseUser':
-        case 'approveEnterpriseUser':
-        case 'rejectEnterpriseUser':
-        case 'updateEnterpriseSupport':
-        case 'updateEnterpriseCredit':
-        case 'updateEnterpriseUserPrice':
-        // organization approvals                
-        case 'acceptEnterpriseUser':
-        case 'rejectEnterpriseUser':
           template = 'enterprise/templates/activitytiles/' + logItemType + '.html';
           break;
         default:
@@ -67,7 +54,6 @@ angular.module('BitGo.Enterprise.AuditLogActivityTileDirective', [])
     // We work in the link function because we need to specify the
     // template before compile time; then manually compile it once we have
     // data on the scope
-    /* istanbul ignore next */
     return {
       restrict: 'A',
       replace: true,
@@ -91,10 +77,8 @@ angular.module('BitGo.Enterprise.AuditLogActivityTileDirective', [])
         scope.logItem.prettyDate = new moment(scope.logItem.date).format('MMMM Do YYYY, h:mm:ss A');
         // Bool for if the action is a policy item
         scope.logItem.isPolicyItem = checkPolicyItem(scope.logItem.type);
-        // Plans get the plans so that plan changes can be displayed
-        scope.plans = BG_DEV.ENTERPRISE.SUPPORT_PLAN_LEVELS;
-
         // init the template
+
         $http.get(getTemplate(scope.logItem.type), {cache: $templateCache})
         .success(function(html) {
           element.html(html);

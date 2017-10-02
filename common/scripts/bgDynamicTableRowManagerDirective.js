@@ -54,12 +54,6 @@ angular.module('BitGo.Common.BGDynamicTableRowManagerDirective', [])
                   case 'transactionRequest':
                     managingDirective = 'bg-approval-tile-tx-request';
                     break;
-                  case 'updateEnterpriseRequest':
-                    managingDirective = 'bg-approval-tile-enterprise-request';
-                    break;
-                  case 'invitation':
-                    managingDirective = 'bg-approval-tile-invitation';
-                    break;
                   default:
                     throw new Error('Expected valid approval type. Got: ' + approvalItemType);
                 }

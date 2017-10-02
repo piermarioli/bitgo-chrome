@@ -1,25 +1,25 @@
 /*
- * @ngdoc directive
- * @name settingsController
- * @description
- * The SettingsController deals with managing the section of the app where
- * a user sets their personal info, notification, setings, etc.
- * 
- * This manages: AboutForm, PhoneForm, CurrencyForm, SecurityForm, NotificationForm
- *
- */
+  About:
+  - The SettingsController deals with managing the section of the
+  app where a user sets their personal info, notifications, settings, etc.
 
+  Notes:
+  - This manages: AboutForm, PhoneForm, CurrencyForm, PasswordForm, NotificationForm
+*/
 angular.module('BitGo.Settings.SettingsController', [])
 
 .controller('SettingsController', ['$modal', '$rootScope', '$scope', '$q', 'SettingsAPI', 'UserAPI', 'UtilityService', 'InternalStateService', 'BG_DEV',
   function($modal, $rootScope, $scope, $q, SettingsAPI, UserAPI, Util, InternalStateService, BG_DEV) {
     // Possible view states (sections) for this controller
-    $scope.viewStates = ['profile', 'security', 'preferences', 'api_access', 'subscriptions', 'billing'];
+    $scope.viewStates = ['about', 'password', 'preferences', 'developers', 'plans'];
+    // The initial view state; initialized later
+    $scope.state = null;
+
     // initialize otp for settings updates
     $scope.otp = null;
     // verification otp is used when resetting the phone number (settings phone form)
     $scope.verificationOtp = null;
-    $scope.settingsStateTemplateSource = null;
+
     // $scope.saveSettings is called from child directives. Returns a promise
     $scope.saveSettings = function(newSettings) {
       if (!newSettings) {
@@ -28,40 +28,12 @@ angular.module('BitGo.Settings.SettingsController', [])
       return SettingsAPI.save(newSettings);
     };
 
-    function getTemplate() {
-      if (!$scope.state || _.indexOf($scope.viewStates, $scope.state) === -1) {
-        throw new Error('Expect $scope.state to be defined when setting template for a wallet');
-      }
-      var template;
-      switch ($scope.state) {
-        case 'profile':
-          template = 'settings/templates/profile.html';
-          break;
-        case 'security':
-          template = 'settings/templates/security.html';
-          break;
-        case 'preferences':
-          template = 'settings/templates/preferences.html';
-          break;
-        case 'api_access':
-          template = 'settings/templates/api_access.html';
-          break;
-        case 'subscriptions':
-          template = 'settings/templates/subscriptions.html';
-          break;
-        case 'billing':
-          template = 'settings/templates/billing.html';
-          break;
-      }
-      return template;
-    }
-
     // $scope.savePhone is called from child directives. Returns a promise
     $scope.savePhone = function(params) {
       if (!params) {
         throw new Error('invalid params');
       }
-      return UserAPI.addOtp(params);
+      return SettingsAPI.savePhone(params);
     };
 
     // Triggers otp modal to open if user needs to otp before changing settings
@@ -105,22 +77,14 @@ angular.module('BitGo.Settings.SettingsController', [])
       .catch(onGetSettingsFail);
     };
 
-    $scope.setTwoStepVerification = function () {
-      $scope.setState('security');
-    };
-
     /**
     * Let all substates (tabs) in the settings area know of state changes
     * @private
     */
     var killStateWatcher = $scope.$watch('state', function(state) {
       if (state) {
-        $scope.$broadcast('SettingsController.StateChanged', {newState: state});
+        $scope.$broadcast('SettingsController.StateChangesd', { newState: state });
       }
-      if (_.indexOf($scope.viewStates, $scope.state) === -1) {
-        return;
-      }
-      $scope.settingsStateTemplateSource = getTemplate();
     });
 
     /**
@@ -133,8 +97,9 @@ angular.module('BitGo.Settings.SettingsController', [])
 
     function init() {
       $rootScope.setContext('accountSettings');
+
       $scope.getSettings();
-      $scope.state = InternalStateService.getInitState($scope.viewStates) || 'profile';
+      $scope.state = InternalStateService.getInitState($scope.viewStates) || 'about';
     }
     init();
   }

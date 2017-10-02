@@ -3,8 +3,10 @@ angular.module('BitGo.API.ReportsAPI', [])
   Notes:
   - This module is for managing all http requests for reports
 */
-.factory('ReportsAPI', ['$q', '$location', '$rootScope', 'SDK', 'UtilityService',
-  function($q, $location, $rootScope, SDK, UtilityService) {
+.factory('ReportsAPI', ['$q', '$location', '$resource', '$rootScope', 'UtilityService',
+  function($q, $location, $resource, $rootScope, UtilityService) {
+    var kApiServer = UtilityService.API.apiServer;
+    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
     var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
 
     // local copy of the report range for all wallets
@@ -19,14 +21,12 @@ angular.module('BitGo.API.ReportsAPI', [])
       if (typeof(startDates[params.walletAddress]) !== 'undefined') {
         return $q.when(startDates[params.walletAddress]);
       }
-      // Don't use wrap here -- we'll catch in getAllWalletsReportRange
-      return $q.when(
-        SDK.doGet('/reports/' + params.walletAddress + '/startDate', {}, 'startDate')
-      )
-      .then(function(startDate) {
+      var resource = $resource(kApiServer + '/reports/' + params.walletAddress + '/startDate', {});
+      return new resource.get().$promise
+      .then(function(result) {
         // cache it
-        startDates[params.walletAddress] = startDate;
-        return startDate;
+        startDates[params.walletAddress] = result.startDate;
+        return result.startDate;
       });
     }
 
@@ -103,10 +103,12 @@ angular.module('BitGo.API.ReportsAPI', [])
     }
 
     // Get a specific report (based on params) for a specific wallet
-    /* istanbul ignore next */
     function getReport(params) {
-      return SDK.wrap(
-        SDK.doGet('/reports/' + params.walletAddress, params)
+      var resource = $resource(kApiServer + '/reports/' + params.walletAddress, {});
+      return new resource.get(params).$promise
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 

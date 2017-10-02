@@ -1,8 +1,10 @@
-/* istanbul ignore next */
 angular.module('BitGo.API.AuditLogAPI', [])
 
-.factory('AuditLogAPI', ['$rootScope', 'SDK',
-  function($rootScope, SDK) {
+.factory('AuditLogAPI', ['$q', '$location', '$resource', '$rootScope', 'UtilityService',
+  function($q, $location, $resource, $rootScope, UtilityService) {
+    var kApiServer = UtilityService.API.apiServer;
+    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
+    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
 
     // Get the audit log based on scoping provided in the params
     function get(params) {
@@ -11,8 +13,11 @@ angular.module('BitGo.API.AuditLogAPI', [])
           typeof(params.limit) !== 'number') {
         throw new Error('Invalid params');
       }
-      return SDK.wrap(
-        SDK.doGet('/auditLog', params)
+      var resource = $resource(kApiServer + "/auditlog", {});
+      return resource.get(params).$promise
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 

@@ -1,7 +1,7 @@
 <h2>Add user</h2>
 <div bg-add-user-to-wallet>
   <form class="row" wallet-add-user-form>
-    <fieldset class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+    <fieldset class="col col--oneOfTwo">
 
       <bg-form-error></bg-form-error>
 
@@ -38,7 +38,7 @@
       <!-- Upsell alert for certain users -->
       <div class="formRow" ng-show="blockRole()">
         <div class="alert alert--notice">
-          <p class="alert-text">To add a {{ role }} to your wallet, <a ng-click="goToCreateOrg()">create an organization</a>.</p>
+          <p class="alert-text">To add a {{ role }} to your wallet, <a ng-click="goToPlans()">upgrade</a> to a Pro account.</p>
         </div>
       </div>
 

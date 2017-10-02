@@ -16,7 +16,7 @@ angular.module('BitGo.Common.BGConfirmActionDirective', [])
       controller: ['$scope', function($scope) {
         // variable on scope used to show confirmation message
         $scope.confirmationMessage = false;
-
+        
         // user initiates delete
         $scope.initiateAction = function() {
           $scope.confirmationMessage = true;
@@ -26,6 +26,7 @@ angular.module('BitGo.Common.BGConfirmActionDirective', [])
         $scope.cancelAction = function() {
           $scope.confirmationMessage = false;
         };
+
       }]
     };
   }

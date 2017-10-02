@@ -3,8 +3,8 @@ angular.module('BitGo.Auth.LoginFormDirective', [])
 /**
  * Directive to help with login form
  */
-.directive('loginForm', ['UtilityService', 'NotifyService', 'RequiredActionService', 'BG_DEV', 'AnalyticsProxy', 'UserAPI',
-  function(Util, Notify, RequiredActionService, BG_DEV, AnalyticsProxy, UserAPI) {
+.directive('loginForm', ['UtilityService', 'NotifyService', 'RequiredActionService', 'BG_DEV', 'AnalyticsProxy',
+  function(Util, Notify, RequiredActionService, BG_DEV, AnalyticsProxy) {
     return {
       restrict: 'A',
       require: '^LoginController',
@@ -68,25 +68,15 @@ angular.module('BitGo.Auth.LoginFormDirective', [])
         };
 
         function onLoginSuccess(user) {
-          if (!$scope.user.settings.email.verified) {
+          if (user.emailNotVerified()) {
             return $scope.$emit('SetState', 'needsEmailVerify');
           }
-          // check the OTP devices
-          if (user.settings.otpDevices.length) {
-            return $scope.$emit('SignUserIn');
+          if (user.phoneNotSet()) {
+            return $scope.$emit('SetState', 'setPhone');
           }
-          UserAPI.getClientCache()
-          .then(function(cache) {
-            // if the verified user object has been returned and user
-            // needs OTP, set access to false
-            if (!cache.bypassSetOTP) {
-              // if the verified user object has been returned and user
-              // needs OTP, set access to false
-              $scope.user.hasAccess = false;
-              return $scope.$emit('SetState', 'setOtpDevice');
-            }
-            $scope.$emit('SignUserIn');
-          });
+          if (user.phoneNotVerified()) {
+            return $scope.$emit('SetState', 'verifyPhone');
+          }
         }
 
         function onLoginFail(error) {
@@ -109,9 +99,7 @@ angular.module('BitGo.Auth.LoginFormDirective', [])
 
         $scope.submitLogin = function() {
           // clear any errors
-          if ($scope.clearFormError) {
-            $scope.clearFormError();
-          }
+          $scope.clearFormError();
           fetchPreFilledFields();
           // handle the LastPass pw/email issues
           setLockedPassword();
@@ -120,7 +108,6 @@ angular.module('BitGo.Auth.LoginFormDirective', [])
             $scope.setFormError('There was an error confirming your password strength. Please reload your page and try again.');
             return;
           }
-
           // Submit the login form
           if (formIsValid()) {
             $scope.attemptLogin()

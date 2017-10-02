@@ -7,10 +7,13 @@
  */
 angular.module('BitGo.API.SDK', ['ngResource'])
 
-.factory('SDK', ['$q', 'CacheService', 'UtilityService',
-  function($q, CacheService, Utils) {
+.factory('SDK', ['CacheService',
+  function(CacheService) {
     var sdkCache = new CacheService.Cache('sessionStorage', 'SDK');
-    var PromiseErrorHelper = Utils.API.promiseErrorHelper;
+
+    // the environment variable, normally set to "prod", "staging", "test",
+    // "webdev" or "local"
+    var env;
 
     // if a URL other than one of the standard ones (www.bitgo.com, etc.) is
     // detected, this gets set to that URL
@@ -20,10 +23,39 @@ angular.module('BitGo.API.SDK', ['ngResource'])
     // environments
     var customBitcoinNetwork;
 
-    var env = BitGoConfig.env.getSDKEnv();
-    if (!env) {
-      customRootURI = 'https://' + location.host;
-      customBitcoinNetwork = 'test';
+    // strip optional "." from the end of the hostname, if present (this almost
+    // never occurs in practice, but technically a hostname can end in a
+    // period).
+    var hostname = location.hostname;
+    if (hostname[hostname.length - 1] === ".") {
+      hostname = hostname.substr(0, hostname.length - 1);
+    }
+
+    // Handle the case of the chrome app first
+    if (location.protocol === "chrome-extension:") {
+      env = BitGoConfig.env.isProd() ? 'prod' : 'test';
+    } else {
+      // determine what environment to use
+      switch(hostname) {
+        case "www.bitgo.com":
+          env = "prod";
+          break;
+        case "staging.bitgo.com":
+          env = "staging";
+          break;
+        case "test.bitgo.com":
+          env = "test";
+          break;
+        case "webdev.bitgo.com":
+          env = "dev";
+          break;
+        case "localhost":
+          env = "local";
+          break;
+        default:
+          customRootURI = "https://" + location.host;
+          customBitcoinNetwork = BitGoConfig.env.isProd() ? "bitcoin" : "test";
+      }
     }
 
     // parameters for constructing SDK object
@@ -37,9 +69,6 @@ angular.module('BitGo.API.SDK', ['ngResource'])
     var sdk;
 
     return {
-      bitcoin: BitGoJS.bitcoin,
-      sjcl: BitGoJS.sjcl,
-
       /**
       * Returns the current instance of the SDK. If not already loaded, it
       * loads the SDK.
@@ -51,95 +80,6 @@ angular.module('BitGo.API.SDK', ['ngResource'])
           return sdk;
         }
         return this.load();
-      },
-
-      getNetwork: function() {
-        return this.bitcoin.networks[BitGoJS.getNetwork()];
-      },
-
-      /**
-       * Helper functions to do direct verbs (GET/POST/PUT/DELETE) against SDK
-       * @param   {String} url   URL path
-       * @param   {Object} data   data to use as body or query (for GET)
-       * @param   {String} field  (optional) field name to extract from result body
-       * @returns {Promise<Object>}    result body
-       */
-      doPost: function(url, data, field) {
-        var sdk = this.get();
-        return sdk.post(sdk.url(url)).send(data).result(field);
-      },
-
-      doPut: function(url, data, field) {
-        var sdk = this.get();
-        return sdk.put(sdk.url(url)).send(data).result(field);
-      },
-
-      doGet: function(url, data, field) {
-        var sdk = this.get();
-        return sdk.get(sdk.url(url)).query(data).result(field);
-      },
-
-      doDelete: function(url, data, field) {
-        data = data || {};
-        var sdk = this.get();
-        return sdk.del(sdk.url(url)).send(data).result(field);
-      },
-
-      /**
-       * Pass-through for sjcl.encrypt
-       */
-      encrypt: function(password, message) {
-        return this.get().encrypt({
-          password: password,
-          input: message
-        });
-      },
-
-      /**
-       * Pass-through for sjcl.decrypt
-       */
-      decrypt: function(password, message) {
-        return this.get().decrypt({
-          password: password,
-          input: message
-        });
-      },
-
-      /**
-       * Generate a random password on the client
-       * @param   {Number} numWords     Number of 32-bit words
-       * @returns {String}          base58 random password
-       */
-      generateRandomPassword: function(numWords) {
-        numWords = numWords || 5;
-        var bytes = this.sjcl.codec.bytes.fromBits(this.sjcl.random.randomWords(numWords));
-        return BitGoJS.bs58.encode(bytes);
-      },
-
-      /**
-       * Generate HMAC of email/password for passing credentials to server
-       * @param   {String} email    user's username
-       * @param   {String} password   user's password
-       * @returns {String}          HMAC'd password
-       */
-      passwordHMAC: function(email, password) {
-        var sjcl = this.sjcl;
-        var out =  (new sjcl.misc.hmac(
-          sjcl.codec.utf8String.toBits(email),
-          sjcl.hash.sha256
-        ))
-        .mac(password);
-        return sjcl.codec.hex.fromBits(out).toLowerCase();
-      },
-
-      /**
-       * Wrap a promise chain with Angular's $q, and catch with PromiseErrorHelper
-       * @param   {Promise} promise    any promise
-       * @returns {Promise}         an Angular $q promise
-       */
-      wrap: function(promise) {
-        return $q.when(promise)
-        .catch(PromiseErrorHelper());
       },
 
       /**

@@ -6,8 +6,8 @@
  */
 angular.module('BitGo.Auth.VerifyEmailController', [])
 
-.controller('VerifyEmailController', ['$scope', '$rootScope', '$location', 'UserAPI', 'NotifyService', 'BG_DEV', 'AnalyticsProxy',
-  function($scope, $rootScope, $location, UserAPI, NotifyService, BG_DEV, AnalyticsProxy) {
+.controller('VerifyEmailController', ['$scope', '$location', '$rootScope', 'UserAPI', 'NotifyService', 'BG_DEV', 'AnalyticsProxy',
+  function($scope, $location, $rootScope, UserAPI, NotifyService, BG_DEV, AnalyticsProxy) {
 
     function handleVerificationFailure(error) {
       // Track the server email validation fail

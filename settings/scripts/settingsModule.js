@@ -5,12 +5,13 @@
 */
 angular.module('BitGo.Settings', [
   // Modules for BitGo.Settings composition
-  'BitGo.Settings.ProfileFormDirective',
-  'BitGo.Settings.DevelopersFormDirective',
+  'BitGo.Settings.AboutFormDirective',
   'BitGo.Settings.DevelopersAccesstokenAddFormDirective',
   'BitGo.Settings.DevelopersManagerDirective',
-  'BitGo.Settings.PreferencesFormDirective',
-  'BitGo.Settings.SettingsController',
-  'BitGo.Settings.SecurityManagerDirective',
-  'BitGo.Settings.PasswordFormDirective'
+  'BitGo.Settings.PasswordFormDirective',
+  'BitGo.Settings.PlansFormDirective',
+  'BitGo.Settings.PreferencesCurrencyFormDirective',
+  'BitGo.Settings.PreferencesNotificationFormDirective',
+  'BitGo.Settings.PhoneFormDirective',
+  'BitGo.Settings.SettingsController'
 ]);

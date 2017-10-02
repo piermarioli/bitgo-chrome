@@ -50,7 +50,7 @@ angular.module('BitGo.Wallet.WalletUserListDirective', [])
           if (!walletShareId) {
             throw new Error('Expect walletShareId to be set');
           }
-          WalletSharesAPI.resendEmail({walletShareId: walletShareId})
+          WalletSharesAPI.resendEmail({shareId: walletShareId})
           .then(function(result) {
             Notify.success('Wallet invite email was re-sent.');
           })
@@ -61,7 +61,7 @@ angular.module('BitGo.Wallet.WalletUserListDirective', [])
           if (!walletShareId) {
             throw new Error('Expect walletShareId to be set');
           }
-          WalletSharesAPI.cancelShare({walletShareId: walletShareId})
+          WalletSharesAPI.cancelShare({shareId: walletShareId})
           .then(function(result) {
             $('#' + walletShareId).animate({
               height: 0,

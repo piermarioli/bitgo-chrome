@@ -11,8 +11,6 @@ angular.module('BitGo.Auth', [
   'BitGo.Auth.LoginFormDirective',
   'BitGo.Auth.SetPhoneFormDirective',
   'BitGo.Auth.TwoFactorFormDirective',
-  'BitGo.Auth.ServicesAgreementFormDirective',
-
   // Logout
   'BitGo.Auth.LogoutController',
   // ResetPw

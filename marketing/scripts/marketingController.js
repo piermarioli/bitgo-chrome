@@ -6,8 +6,8 @@
  */
 angular.module('BitGo.Marketing.MarketingController', [])
 
-.controller('MarketingController', ['$location', '$scope', '$rootScope', 'NotifyService', 'EnterpriseAPI', 'BG_DEV',
-  function($location, $scope, $rootScope, NotifyService, EnterpriseAPI, BG_DEV) {
+.controller('MarketingController', ['$timeout', '$location', '$scope', '$rootScope', '$anchorScroll', 'NotifyService', 'EnterpriseAPI', 'BG_DEV',
+  function($timeout, $location, $scope, $rootScope, $anchorScroll, NotifyService, EnterpriseAPI, BG_DEV) {
 
     // We have one controller for all of the marketing pages, so we track
     // context switches using this URL-context map
@@ -24,16 +24,12 @@ angular.module('BitGo.Marketing.MarketingController', [])
       '/cases': BG_DEV.APP_CONTEXTS.marketingCases,
       '/about': BG_DEV.APP_CONTEXTS.marketingAbout,
       '/services_agreement': BG_DEV.APP_CONTEXTS.marketingServicesAgreement,
-      '/sla': BG_DEV.APP_CONTEXTS.marketingSla,
-      '/api-pricing': BG_DEV.APP_CONTEXTS.marketingApiPricing
+      '/pricing': BG_DEV.APP_CONTEXTS.marketingPricing,
+      '/sla': BG_DEV.APP_CONTEXTS.marketingSla
     };
-
-    $scope.plans = BG_DEV.ENTERPRISE.SUPPORT_PLAN_LEVELS;
 
     // the user info object that is submitted when someone inquires about API or platform
     $scope.userInfo = null;
-    // ServicesAgreement change whenever new version is updated
-    $scope.ServicesAgreementSource = 'marketing/templates/services_agreement_v1.html';
 
     // Slide quotes for the landing page
     $scope.slides = [
@@ -63,9 +59,9 @@ angular.module('BitGo.Marketing.MarketingController', [])
       },
       {
         msg: "The safety of our clients’ funds is our number one priority. BitGo's secure wallet and API allow us to innovate without compromising on our very high security standards.",
-        person: 'Joe Lee',
-        company: 'Magnr',
-        position: 'CIO'
+        person: 'Joseph Lee',
+        company: 'BTC.sx',
+        position: 'CEO'
       }
     ];
 
@@ -105,8 +101,6 @@ angular.module('BitGo.Marketing.MarketingController', [])
         .catch(function() {
           NotifyService.error('There was an issue with submitting your form. Can you please try that again?');
         });
-      } else {
-        NotifyService.error('Please fill in email address before submitting');
       }
     };
 

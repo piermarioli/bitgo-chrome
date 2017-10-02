@@ -58,38 +58,11 @@ angular.module('BitGo.App.AppController', [])
     };
 
     /**
-     * Logic to show to settings icon at the top nav bar
-     * @public
-     */
-    $scope.canShowEnterpriseSettingsIcon = function() {
-      if ($rootScope.enterprises && $rootScope.enterprises.current) {
-        return $rootScope.enterprises.current.isAdmin && !$rootScope.enterprises.current.isPersonal && !Utils.Url.isAccountSettingsPage() && !Utils.Url.isCreateEnterprisePage();
-      }
-      return false;
-    };
-
-    /**
      * Logic to turn the top nav dropdown title blue if user is in settings
      * @public
      */
-    $scope.isAccountSettingsSection = function() {
-      return Utils.Url.isAccountSettingsPage();
-    };
-
-    /**
-     * Logic to use when deciding if a url is enterprise settings
-     * @public
-     */
-    $scope.isEnterpriseSettingsSection = function() {
-      return Utils.Url.isEnterpriseSettingsPage();
-    };
-
-    /**
-     * Logic to turn the top nav dropdown title blue if user is create enterprise
-     * @public
-     */
-    $scope.isCreateEnterpriseSection = function() {
-      return Utils.Url.isCreateEnterprisePage();
+    $scope.isSettingsSection = function() {
+      return $location.path().indexOf('settings') > -1;
     };
 
     /**
@@ -113,6 +86,13 @@ angular.module('BitGo.App.AppController', [])
       if (!section) {
         throw new Error('missing top level nav section');
       }
+      // If section passed in is settings, determine if it is selected from the url. (This deals with global settings)
+      if (section === 'settings') {
+        if (Utils.Url.getEnterpriseIdFromUrl() === "") {
+          return true;
+        }
+        return false;
+      }
       // else check the check the enterprise from the url
       return Utils.Url.getEnterpriseIdFromUrl() === section;
     };
@@ -123,14 +103,6 @@ angular.module('BitGo.App.AppController', [])
      */
     $scope.goToGlobalSettings = function() {
       $location.path('/settings');
-    };
-
-    /**
-     * Go to the create enterprise section of the app
-     * @public
-     */
-    $scope.goToAddEnterprise = function() {
-      $location.path('/create-organization');
     };
 
     /**
@@ -165,10 +137,13 @@ angular.module('BitGo.App.AppController', [])
      * @param enterprise {Object} bitgo client enterprise object
      * @public
      */
-    $scope.goToEnterpriseSettings = function(enterprise) {
-      if (!enterprise) {
+    $scope.goToEnterpriseSettings = function(event, enterprise) {
+      if (!event || !enterprise) {
         throw new Error('missing args');
       }
+      // kill the event from propagating out to the 'goToEnterprise'
+      // handler on the parent div
+      event.stopPropagation();
 
       EnterpriseAPI.setCurrentEnterprise(enterprise);
       if (enterprise.isPersonal) {

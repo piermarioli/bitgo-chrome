@@ -109,7 +109,7 @@ angular.module('BitGo.Models.WalletModel', [])
         return false;
       }
       if (this.data.admin.policy && !this.data.admin.policy.rules) {
-        console.error('Missing policy rules');
+        console.error('Missing polcy rules');
         return false;
       }
       return true;

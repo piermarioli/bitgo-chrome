@@ -22,6 +22,7 @@ angular.module('BitGo.Wallet', [
   'BitGo.Wallet.WalletCreateStepsBackupkeyDirective',
   'BitGo.Wallet.WalletCreateStepsPasscodeDirective',
   'BitGo.Wallet.WalletCreateStepsActivateDirective',
+  'BitGo.Wallet.WalletCreateStepsInsureDirective',
   // Policy
   'BitGo.Wallet.WalletPolicyManagerDirective',
   'BitGo.Wallet.WalletPolicySpendingLimitDirective',
@@ -38,7 +39,5 @@ angular.module('BitGo.Wallet', [
   'BitGo.Wallet.WalletSettingsGeneralFormDirective',
   'BitGo.Wallet.WalletSettingsPasscodeFormDirective',
   // Recovery
-  'BitGo.Wallet.WalletRecoverController',
-  // Dependencies
-  'BitGo.API.SDK'
+  'BitGo.Wallet.WalletRecoverController'
 ]);

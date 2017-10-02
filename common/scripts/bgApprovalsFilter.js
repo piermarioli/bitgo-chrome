@@ -27,8 +27,7 @@ angular.module('BitGo.Common.BGApprovalsFilter', [])
       function filterByType() {
         var VALID_APPROVAL_TYPES = {
           'transactionRequest': true,
-          'userChangeRequest': true,
-          'updateEnterpriseRequest': true
+          'userChangeRequest': true
         };
         if (!_.has(VALID_APPROVAL_TYPES, filterTarget)) {
           throw new Error('Invalid approval type');

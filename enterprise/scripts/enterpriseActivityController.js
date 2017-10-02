@@ -5,8 +5,8 @@
 */
 angular.module('BitGo.Enterprise.EnterpriseActivityController', [])
 
-.controller('EnterpriseActivityController', ['$scope', '$rootScope', 'BG_DEV', 'InternalStateService', 'AnalyticsProxy', '$location',
-  function($scope, $rootScope, BG_DEV, InternalStateService, AnalyticsProxy, $location) {
+.controller('EnterpriseActivityController', ['$scope', '$rootScope', 'BG_DEV', 'InternalStateService', 'AnalyticsProxy',
+  function($scope, $rootScope, BG_DEV, InternalStateService, AnalyticsProxy) {
     // The view viewStates within the enterprise activity section
     $scope.viewStates = ['auditlog', 'approvals'];
     // The current view section
@@ -40,13 +40,13 @@ angular.module('BitGo.Enterprise.EnterpriseActivityController', [])
     };
 
     /**
-    * Take the user to the create organization page
+    * Take the user to their account settings - plans page
     *
     * @public
     */
-    $scope.goToCreateOrg = function() {
+    $scope.goToPlans = function() {
       AnalyticsProxy.track('clickUpsell', { type: 'auditLog' });
-      $location.path('/create-organization');
+      InternalStateService.goTo('personal_settings:plans');
     };
 
     // gets the view template based on the $scope's viewSection

@@ -8,20 +8,20 @@
   <form class="row">
 
     <div class="row">
-      <div class="col-xs-12 col-sm-6 col-md-6 col-lg-6 col--noPadding" ng-show="wallets.current.roleIsAdmin()">
+      <div class="col col--oneOfTwo" ng-show="wallets.current.roleIsAdmin()">
         <label>Wallet name</label>
         <div class="inputText">
           <input type="text" data-ng-model="walletName" placeholder="Full Name" class="inputText-input" bg-focus-when="true" bg-input-validator>
           <div class="inputText-verification inputText-verification--unverified" ng-show="nameError">Need name</div>
         </div>
       </div>
-      <div class="col-sm-5 col-md-5 col-lg-5 col-sm-offset-1 col--noPadding">
+      <div class="col col--oneOfTwo">
         <button class="button button--inputParallel" ng-show="showRenameButton()" ng-click="saveLabelChange()">Rename wallet</button>
       </div>
     </div>
 
     <div class="row">
-      <div class="col-xs-12 col-sm-6 col-md-6 col-lg-6 col--noPadding">
+      <div class="col col--oneOfTwo">
         <bg-form-error></bg-form-error>
         <label>Your role</label>
         <div class="inputText--readonly">

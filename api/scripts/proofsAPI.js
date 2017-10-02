@@ -4,18 +4,24 @@
  * @description
  * Manages the http requests dealing with proof of reserves
  */
-/* istanbul ignore next */
 angular.module('BitGo.API.ProofsAPI', [])
 
-.factory('ProofsAPI', ['$location', 'SDK',
-  function($location, SDK) {
+.factory('ProofsAPI', ['$q', '$location', '$resource', 'UtilityService',
+  function($q, $location, $resource, UtilityService) {
+    var kApiServer = UtilityService.API.apiServer;
+    var PromiseSuccessHelper = UtilityService.API.promiseSuccessHelper;
+    var PromiseErrorHelper = UtilityService.API.promiseErrorHelper;
+
     /**
     * List all proofs
     * @private
     */
     function list() {
-      return SDK.wrap(
-        SDK.doGet('/proof')
+      var resource = $resource(kApiServer + '/proof', {});
+      return new resource.get({}).$promise
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 
@@ -27,8 +33,11 @@ angular.module('BitGo.API.ProofsAPI', [])
       if (!proofId) {
         throw new Error('missing proofId');
       }
-      return SDK.wrap(
-        SDK.doGet('/proof/' + proofId)
+      var resource = $resource(kApiServer + '/proof/' + proofId, {});
+      return new resource.get({}).$promise
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 
@@ -40,11 +49,11 @@ angular.module('BitGo.API.ProofsAPI', [])
       if (!params.hash) {
         throw new Error('invalid params');
       }
-      return SDK.wrap(
-        SDK.doGet('/proof/liability/' + params.hash, {
-          user: params.user,
-          nonce: params.nonce
-        })
+      var resource = $resource(kApiServer + '/proof/liability/' + params.hash, {});
+      return new resource.get({ user: params.userId, nonce: params.nonce }).$promise
+      .then(
+        PromiseSuccessHelper(),
+        PromiseErrorHelper()
       );
     }
 
